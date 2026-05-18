@@ -476,3 +476,9 @@ Pre-consulta automática (✅ F-3 implementado), pre-cita del paciente (F-16), r
 ### No eliminado en esta pasada
 - `handoffs/` y `reviews/`: se conservan porque documentan RLS, Storage, F-16, Azure y limpieza legacy.
 - `src/shell.css` y `VITE_DEMO_MAC_SHELL`: se conservan temporalmente porque el README los documenta como modo demo opcional. Requiere decisión de producto antes de borrarlo.
+
+### Limpieza local adicional
+- `.vscode/settings.json` se eliminó del repo porque solo configuraba Live Server (`5501`), herramienta no usada por Vite.
+- `.claude/` y `.vscode/` quedaron ignorados como configuración local de máquina.
+- Se limpiaron artefactos regenerables locales: `dist/`, `*.tsbuildinfo` y `supabase/.temp/`.
+- Se conservaron `.env.local` y `node_modules/` en la máquina para poder seguir desarrollando localmente; ambos siguen fuera de Git.
