@@ -26,9 +26,25 @@ Before implementing a feature:
 Use this mental model:
 
 - Opus is for product ideation, exploration, and high-level planning.
-- Codex is for robust logic, Supabase, security, schema, RLS, indexes,
-  production-readiness, and precise handoff prompts.
-- Sonnet is for focused implementation once the constraints are clear.
+- Codex is the technical architect and production-readiness guardrail for this
+  project: cybersecurity, data governance, Supabase schema, RLS, secure Edge
+  Functions, role policies, auditability, financial/medical data integrity,
+  indexes, validation, documentation, GitHub hygiene, and precise handoff
+  prompts.
+- Claude/Sonnet is the focused development implementer once the constraints are
+  clear: UI, components, scoped feature implementation, interaction details,
+  and local app logic from a defined prompt.
+
+Recommended workflow:
+
+1. Saul defines the product goal or feature.
+2. Codex verifies the current code, `FUTURAS_IMPLEMENTACIONES.md`, and
+   Supabase/schema assumptions before designing the implementation path.
+3. Codex prepares a secure, scoped implementation plan or handoff prompt.
+4. Claude/Sonnet implements the focused dev work without re-ideating the whole
+   architecture.
+5. Codex reviews the result for security, data integrity, RLS/schema fit,
+   validation, documentation, commits, and GitHub sync.
 
 When working as Sonnet, do not re-ideate the whole feature unless asked.
 Execute the scoped prompt, verify, and document.
