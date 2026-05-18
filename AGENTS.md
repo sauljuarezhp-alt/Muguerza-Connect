@@ -106,6 +106,32 @@ After meaningful work, update `FUTURAS_IMPLEMENTACIONES.md` with:
 Do not document aspirational behavior as implemented. Document only what is
 actually present and verified.
 
+## Git And Versioning Cadence
+
+Use Git as the running safety net for the project, but avoid noisy commits.
+
+Recommended cadence:
+
+- Commit after each completed logical unit: feature, bugfix, cleanup,
+  documentation update, Supabase migration/hardening pass, or verified handoff.
+- For long work sessions, commit a stable checkpoint every 30-60 minutes if the
+  code builds and the change is coherent.
+- Always commit and push at the end of a session when the working tree is in a
+  good state.
+- Push to GitHub after every commit on `main` so the remote repository stays
+  current across machines.
+- Do not commit broken work to `main` unless Saul explicitly asks for a WIP
+  checkpoint. Prefer a branch for experimental or risky refactors.
+- Before a commit, run the relevant validation (`npm.cmd run build` for app
+  changes when feasible) or clearly document why validation was not run.
+- Keep commits focused and named by outcome, for example `Implement precita
+  status badges`, `Harden document storage policies`, or `Clean local machine
+  settings`.
+
+Do not wait for a huge milestone before committing. Small, verified commits are
+better for rollback, cross-machine continuity, and understanding the product's
+evolution.
+
 ## Pre-Handoff Checklist
 
 Before saying "done":
