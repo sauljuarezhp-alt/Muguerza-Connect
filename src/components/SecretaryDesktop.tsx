@@ -16,9 +16,12 @@ import {
   listDocuments,
   uploadPatientDocument,
   deleteDocument,
+  listDoctors,
+  updateSlotStatus,
   AGENDA_MIN_HOUR,
   AGENDA_MAX_HOUR,
 } from '../api/secretary';
+import { listPending, resolvePendingItem } from '../api/pending';
 import { createLab, listLabsForPatient } from '../api/labs';
 import { ANALITOS, calcStatus } from '../data/analitos';
 import { CloseConsultationModal } from './CloseConsultationModal';
@@ -278,7 +281,7 @@ function PacientesPanel({ doctorId }: { doctorId: string }) {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([listAllPatients(doctorId || undefined), import('../api/secretary').then(m => m.listDoctors())]).then(([pts, docs]) => {
+    Promise.all([listAllPatients(doctorId || undefined), listDoctors()]).then(([pts, docs]) => {
       setPatients(pts); setDoctors(docs); setLoading(false);
     });
   }, [doctorId]);
@@ -488,7 +491,7 @@ function AgendaPanel({ doctorId: initialDoctorId }: { doctorId: string }) {
   const [form, setForm] = useState<AgendaSlotFormData>(emptySlot);
 
   useEffect(() => {
-    import('../api/secretary').then(m => m.listDoctors()).then(d => { setDoctors(d); });
+    listDoctors().then(d => { setDoctors(d); });
   }, []);
 
   useEffect(() => {
@@ -605,7 +608,7 @@ function AgendaPanel({ doctorId: initialDoctorId }: { doctorId: string }) {
   }
 
   async function handleMarkCancelled(s: any, reason: string) {
-    await import('../api/secretary').then(m => m.updateSlotStatus(s.id, 'cancelled', reason));
+    await updateSlotStatus(s.id, 'cancelled', reason);
     setSlots(prev => prev.map(x => x.id === s.id ? { ...x, status: 'cancelled' } : x));
     setCancelTarget(null);
   }
@@ -1106,16 +1109,13 @@ function PendientesPanel() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    import('../lib/supabase').then(({ supabase }) => {
-      supabase.from('pending_items').select('*').order('id').then(({ data }) => {
-        setItems(data || []);
-        setLoading(false);
-      });
-    });
+    listPending()
+      .then(setItems)
+      .finally(() => setLoading(false));
   }, []);
 
   async function markDone(id: string) {
-    await import('../api/pending').then(m => m.resolvePendingItem(id));
+    await resolvePendingItem(id);
     setItems(s => s.filter(x => x.id !== id));
   }
 

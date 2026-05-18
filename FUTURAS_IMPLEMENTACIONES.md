@@ -453,3 +453,26 @@ Mensajes del paciente entran a Connect, IA clasifica urgente/rutina/admin, secre
 
 **Diferenciadores donde Eleonor no tiene nada:**
 Pre-consulta automática (✅ F-3 implementado), pre-cita del paciente (F-16), referido frictionless (F-10), co-management (F-17), storytelling del paciente (F-14+6), IA clínica (F-1, F-7, F-8), marketplace de slots (F-13).
+
+---
+
+## ✅ Limpieza de repositorio inicial — 17 de mayo de 2026
+
+**Estado:** Aplicado localmente por Codex.
+
+### Qué se depuró
+- Se eliminaron artefactos generados `vite.config.js` y `vite.config.d.ts`; la fuente real es `vite.config.ts`.
+- `tsconfig.node.json` ahora usa `noEmit: true` y `tsconfig.json` incluye `vite.config.ts` sin referencia de build, para no volver a generar outputs del config de Vite.
+- Se eliminó `src/data/seed.ts`, placeholder de datos demo ya no importado. La fuente de verdad actual es Supabase y los datos demo viven en `supabase/seed.sql`.
+- Se eliminó `src/api/storage.ts`, helper no usado que podía invitar a uploads directos sin metadata/historial. Los documentos deben pasar por `src/api/secretary.ts`.
+- Se corrigió el orden de `@import` en `src/styles.css`.
+- `SecretaryDesktop` dejó imports dinámicos redundantes y usa funciones directas de `src/api/secretary.ts` y `src/api/pending.ts`.
+- `README.md` fue actualizado para reflejar la estructura real.
+
+### Validación
+- `npm.cmd run build` pasa fuera del sandbox.
+- Avisos restantes: bundle principal grande y oportunidades de code-splitting; no se tocaron en esta limpieza para evitar refactor amplio.
+
+### No eliminado en esta pasada
+- `handoffs/` y `reviews/`: se conservan porque documentan RLS, Storage, F-16, Azure y limpieza legacy.
+- `src/shell.css` y `VITE_DEMO_MAC_SHELL`: se conservan temporalmente porque el README los documenta como modo demo opcional. Requiere decisión de producto antes de borrarlo.

@@ -10,7 +10,6 @@ export * from './inbox';
 export * from './agenda';
 export * from './chats';
 export * from './pending';
-export * from './storage';
 export * from './secretary';
 export * from './preconsulta';
 export * from './metrics';

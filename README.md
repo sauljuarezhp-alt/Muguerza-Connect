@@ -79,7 +79,6 @@ src/
     agenda.ts
     chats.ts
     pending.ts
-    storage.ts
     secretary.ts
     index.ts
   components/
@@ -100,7 +99,6 @@ src/
   data/
     analitos.ts                   # Catalogo local de analitos para captura manual
     icons.tsx
-    seed.ts
   lib/
     supabase.ts
   types.ts
