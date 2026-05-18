@@ -545,3 +545,20 @@ Riesgos al hacerlo:
 - Es un refactor transversal si se hace agresivo.
 - Puede romper estados compartidos o imports si se separa sin cuidado.
 - Debe hacerse en una rama/commit propio, con build y revisión visual del login, portal doctor, portal secretaria, expediente y pre-cita pública.
+
+---
+
+## ✅ Actualización de README — mayo 2026
+
+**Estado:** Aplicado por Codex.
+
+### Qué cambió
+- `README.md` fue reescrito para reflejar el objetivo actual: producto clínico-operativo con camino a producción, no prototipo desechable.
+- Se documentó el estado real de la app: portal doctor, portal secretaria, Supabase, RLS, Storage privado, pre-cita, métricas, historial estructurado y Edge Function `extract-labs`.
+- Se agregó el flujo de trabajo Saul → Codex → Claude/Sonnet → Codex.
+- Se aclaró que `FUTURAS_IMPLEMENTACIONES.md` es la fuente de verdad funcional y que el README es orientación general.
+- Se resumieron deuda técnica conocida, validación, Git/GitHub, archivos ignorados y roadmap cercano.
+
+### Validación
+- Cambio documental únicamente; no modifica código de runtime ni Supabase.
+- No requiere build.
