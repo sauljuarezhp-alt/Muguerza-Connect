@@ -482,3 +482,66 @@ Pre-consulta automática (✅ F-3 implementado), pre-cita del paciente (F-16), r
 - `.claude/` y `.vscode/` quedaron ignorados como configuración local de máquina.
 - Se limpiaron artefactos regenerables locales: `dist/`, `*.tsbuildinfo` y `supabase/.temp/`.
 - Se conservaron `.env.local` y `node_modules/` en la máquina para poder seguir desarrollando localmente; ambos siguen fuera de Git.
+
+---
+
+## 🟡 Deuda técnica · Shell demo y bundle grande
+
+**Estado:** Pendiente documentado — mayo 2026  
+**Prioridad:** No bloquea desarrollo actual. Atender antes de una versión pública/producción con usuarios reales.  
+**Validación actual:** `npm.cmd run build` pasa; Vite solo emite warning de tamaño de bundle.
+
+### Shell demo macOS
+
+`src/shell.css` y la bandera `VITE_DEMO_MAC_SHELL` se conservan por ahora a propósito.
+
+Qué implica:
+- La experiencia normal sigue siendo pantalla completa porque `.env.local` usa `VITE_DEMO_MAC_SHELL=false`.
+- El marco tipo macOS solo se activa manualmente para demos o grabaciones.
+- No debe considerarse parte del producto operativo final.
+
+Por qué conservarlo temporalmente:
+- Puede servir para presentar la app como demo visual sin tocar la experiencia principal.
+- Ya está aislado y apagado por defecto, así que no afecta el flujo diario.
+
+Cuándo eliminarlo:
+- Cuando ya no se necesiten grabaciones/demo con ese encuadre.
+- Antes de una versión más formal si queremos reducir CSS y variables de entorno no esenciales.
+
+Qué habría que hacer para retirarlo:
+- Quitar `VITE_DEMO_MAC_SHELL` de `src/vite-env.d.ts`, README y `.env.local`.
+- Simplificar `src/App.tsx` para renderizar siempre pantalla completa.
+- Eliminar `src/shell.css` si ya no contiene estilos necesarios para el shell normal.
+- Validar `npm.cmd run build` y revisar visualmente doctor/secretaria.
+
+### Warning de bundle grande
+
+Durante `npm.cmd run build`, Vite genera un aviso porque el archivo principal de JavaScript queda por arriba de 500 kB minificado. En la última validación fue aproximadamente `936 kB` minificado y `259 kB` gzip.
+
+Qué significa:
+- No es un error de compilación.
+- La app funciona, pero el primer arranque en navegador puede tardar más porque se descarga mucho código de golpe.
+- El riesgo aparece más en producción real: red hospitalaria lenta, tablets, equipos antiguos o accesos remotos.
+
+Por qué pasa ahora:
+- El portal de doctor, portal de secretaria, expediente, agenda, documentos, dashboard de práctica y gráficas están dentro del mismo bundle inicial.
+- `recharts` agrega peso relevante por las gráficas.
+- Algunas pantallas que no se usan al inicio se cargan aunque el usuario todavía no las abra.
+
+Qué se debe hacer:
+- Aplicar code-splitting con `React.lazy`/`Suspense` para cargar bajo demanda pantallas pesadas como `SecretaryDesktop`, `DesktopPracticeDashboard`, `PatientStoryView` y vistas con gráficas.
+- Separar `recharts` en un chunk propio mediante imports lazy o `manualChunks` en Vite/Rollup.
+- Revisar imports barrel (`src/api/index.ts`) si impiden separar módulos por pantalla.
+- Medir después de cada cambio con `npm.cmd run build`.
+
+Beneficios esperados:
+- Menor tiempo de carga inicial.
+- Mejor experiencia en computadoras hospitalarias o redes lentas.
+- Base más preparada para PWA/tablet o despliegue público.
+- Permite que doctor y secretaria carguen solo el código de su rol, reduciendo costo de arranque.
+- Mantiene la app más escalable conforme entren features como recetas, IA clínica, WhatsApp o timeline por cita.
+
+Riesgos al hacerlo:
+- Es un refactor transversal si se hace agresivo.
+- Puede romper estados compartidos o imports si se separa sin cuidado.
+- Debe hacerse en una rama/commit propio, con build y revisión visual del login, portal doctor, portal secretaria, expediente y pre-cita pública.
