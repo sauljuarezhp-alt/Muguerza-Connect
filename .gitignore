@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-ssr
+*.local
+.env.local
+.env
+.DS_Store
+*.log
+*.tsbuildinfo
+.claude/settings.local.json
+supabase/.temp/

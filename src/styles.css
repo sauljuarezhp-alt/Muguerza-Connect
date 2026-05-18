@@ -1,0 +1,83 @@
+/* ========================================================================
+   Muguerza Connect — Desktop Web · Tokens, fonts & globals
+   ======================================================================== */
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&display=swap');
+
+/* ---- Franklin Gothic --------------------------------------------------- */
+@font-face {
+  font-family: 'Franklin Gothic';
+  src: url('/fonts/FranklinGothic-Medium.ttf') format('truetype');
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Franklin Gothic';
+  src: url('/fonts/FranklinGothic-MediumItalic.ttf') format('truetype');
+  font-weight: 500; font-style: italic; font-display: swap;
+}
+@font-face {
+  font-family: 'Franklin Gothic Book';
+  src: url('/fonts/FranklinGothic-Book.ttf') format('truetype');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Franklin Gothic Book';
+  src: url('/fonts/FranklinGothic-BookItalic.ttf') format('truetype');
+  font-weight: 400; font-style: italic; font-display: swap;
+}
+
+:root {
+  --brand-purple: #671E75;
+  --brand-purple-700: #531862;
+  --brand-purple-100: #ECDDF0;
+  --brand-blue:   #0899D2;
+  --brand-navy:   #274B96;
+  --brand-teal:   #10897B;
+  --brand-orange: #FF6A13;
+  --brand-gold:   #FFA800;
+
+  --mc-red: #D93A3A;
+  --mc-red-bg: #FDECEC;
+  --mc-amber: #E08900;
+  --mc-amber-bg: #FFF4DB;
+  --mc-green: #10897B;
+  --mc-green-bg: #E4F3F1;
+
+  --bg:        #F6F5F2;
+  --card:      #FFFFFF;
+  --sep:       #E5E5EA;
+  --sep-soft:  #F0F0F2;
+  --ink:       #1C1C1E;
+  --text-2:    #3C3C43;
+  --text-3:    #8E8E93;
+
+  --font-d:   'Franklin Gothic', 'Libre Franklin', -apple-system, system-ui, sans-serif;
+  --font-b:   'Franklin Gothic Book', 'Franklin Gothic', 'Libre Franklin', -apple-system, system-ui, sans-serif;
+  --font-m:   'Roboto Mono', ui-monospace, Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  width: 100%; height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-b);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root { width: 100%; height: 100%; }
+
+.mc-panel::-webkit-scrollbar { width: 8px; }
+.mc-panel::-webkit-scrollbar-thumb { background: #D6D8DC; border-radius: 4px; }
+.mc-panel::-webkit-scrollbar-track { background: transparent; }
+
+.mc-ico { width: 16px; height: 16px; stroke-width: 2; fill: none; stroke: currentColor; flex-shrink: 0; }
+.mc-ico.lg { width: 20px; height: 20px; }
