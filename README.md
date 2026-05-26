@@ -1,5 +1,23 @@
 # Muguerza Connect
 
+## Contexto Estrategico
+
+Muguerza Connect forma parte de la estrategia ambulatoria CEI para CHRISTUS
+Muguerza. El producto se plantea como el CRM clinico-operativo y la capa digital
+de operacion para el nuevo modelo de clinicas ambulatorias: conecta pacientes,
+medicos, equipos administrativos y aseguradoras dentro de un flujo coordinado.
+
+Su objetivo inicial no es corregir desde el dia uno toda la operacion actual de
+hospitales y consultorios privados, sino evitar que esas fricciones se repliquen
+en el nuevo modelo ambulatorio. Dentro de ese alcance, la plataforma busca
+absorber carga administrativa alrededor de agenda, preautorizaciones,
+documentos, resultados, seguimiento y referidos medicos.
+
+En una etapa posterior, Muguerza Connect puede escalar como servicio digital
+para la red medica mas amplia de Muguerza, incluyendo consultorios privados que
+hoy no cuentan con infraestructura administrativa digital provista por el
+hospital.
+
 Muguerza Connect es un portal clínico-operativo para el ecosistema CHRISTUS
 Muguerza CEI. El objetivo actual no es una landing ni un prototipo desechable:
 es avanzar hacia una aplicación real de trabajo diario para doctores y
@@ -10,8 +28,6 @@ La app actual es **Vite + React + TypeScript + Supabase**. Corre como portal
 desktop web, con flujos para doctor y secretaria, expediente de pacientes,
 agenda, documentos, resultados de laboratorio, pre-cita pública, métricas de
 práctica y hardening progresivo de Supabase/RLS.
-
-## Estado Actual
 
 Implementado y documentado en el ledger:
 
