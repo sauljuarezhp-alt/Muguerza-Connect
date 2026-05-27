@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from './lib/supabase';
+import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { MCDesktop } from './components/MCDesktop';
 import { LoginScreen } from './components/LoginScreen';
 import { SecretaryDesktop } from './components/SecretaryDesktop';
@@ -39,6 +39,28 @@ export default function App() {
     return (
       <ThemeProvider>
         <PrecitaForm token={precitaToken} />
+      </ThemeProvider>
+    );
+  }
+
+  if (!isSupabaseConfigured) {
+    return (
+      <ThemeProvider>
+        <main className="mc-app">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: '#F6F5F2', fontFamily: 'Franklin Gothic', color: '#2D2A26', padding: 24 }}>
+            <div style={{ width: 'min(520px, 100%)', background: '#FFFFFF', border: '1px solid #E5E0DA', borderRadius: 8, padding: 24, boxShadow: '0 10px 30px rgba(45, 42, 38, 0.08)' }}>
+              <h1 style={{ margin: '0 0 12px', fontSize: 20, fontWeight: 700 }}>Falta configurar Supabase</h1>
+              <p style={{ margin: '0 0 16px', lineHeight: 1.5, color: '#5F5A54' }}>
+                Crea un archivo .env.local con VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY, luego reinicia npm run dev.
+              </p>
+              <pre style={{ margin: 0, padding: 12, overflowX: 'auto', background: '#F7F4F0', borderRadius: 6, color: '#2D2A26', fontSize: 13 }}>
+{`VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
+VITE_DEMO_MAC_SHELL=false`}
+              </pre>
+            </div>
+          </div>
+        </main>
       </ThemeProvider>
     );
   }
