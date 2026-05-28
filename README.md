@@ -31,7 +31,7 @@ práctica y hardening progresivo de Supabase/RLS.
 
 Implementado y documentado en el ledger:
 
-- Portal de doctor con dashboard, pacientes, expediente, inbox, agenda,
+- Portal de doctor con dashboard, pacientes, expediente, inbox CRM, agenda,
   aseguradoras, órdenes, perfil y preferencias.
 - Portal de secretaria con administración de pacientes, agenda, documentos,
   laboratorios manuales, pre-cita y pendientes.
@@ -220,7 +220,7 @@ Flujos principales:
 - Expediente 360 del paciente.
 - Estudios y resultados de laboratorio.
 - Historial estructurado.
-- Inbox por origen.
+- Inbox CRM con conversaciones por paciente y canales Paciente/Asistente.
 - Agenda.
 - Aseguradoras.
 - Nueva orden.

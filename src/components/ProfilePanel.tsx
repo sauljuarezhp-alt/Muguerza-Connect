@@ -38,7 +38,6 @@ const PATIENT_TABS = [
   { value: 'summary', label: 'Resumen' },
   { value: 'labs',    label: 'Estudios' },
   { value: 'insurer', label: 'Aseguradora' },
-  { value: 'comms',   label: 'Comunicación' },
   { value: 'history', label: 'Historial' },
 ];
 

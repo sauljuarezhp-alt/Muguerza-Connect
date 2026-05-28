@@ -436,6 +436,53 @@ Mensajes del paciente entran a Connect, IA clasifica urgente/rutina/admin, secre
 
 ---
 
+## ✅ Inbox CRM · Mensajeria centralizada por paciente
+
+**Estado:** Implementado en UI local — 28 de mayo de 2026  
+**Motor:** M1 + M2 · **Costo real:** $0 en esta fase · **IA requerida:** No
+
+### Que cambio
+La mensajeria directa ya no vive dentro del expediente clinico del paciente. El tab de Comunicacion fue retirado de `DesktopPatient.tsx` para que Pacientes vuelva a concentrarse en resumen clinico, estudios, aseguradora, historial y modo paciente.
+
+`DesktopInbox.tsx` ahora funciona como bandeja CRM: muestra la lista de pacientes del doctor, permite buscar por nombre/diagnostico/expediente/aseguradora, abre la conversacion del paciente seleccionado y separa dos canales existentes:
+
+- `patient`: canal del paciente, preparado para WhatsApp.
+- `nurse`: canal interno con asistente/enfermeria/equipo.
+
+Tambien muestra los `inbox_items` ligados al paciente seleccionado como pendientes/senales recientes arriba de la conversacion.
+
+### Archivos modificados
+| Archivo | Cambio |
+|---|---|
+| `src/components/DesktopInbox.tsx` | Redisenado como CRM de conversaciones por paciente, con busqueda, selector de paciente, tabs Paciente/Asistente, lectura y envio sobre `chat_messages`, y resumen de `inbox_items`. |
+| `src/components/DesktopPatient.tsx` | Se elimino la carga de `chat_messages`, el estado de drafts/chats y el tab de Comunicacion del expediente. Tambien se retiro el boton estatico de Videollamada y `Nueva orden` ahora abre el flujo real de orden para ese paciente. |
+| `src/components/MCDesktop.tsx` | Centraliza la apertura de `NewOrderModal` y permite pasar el paciente inicial desde expediente. |
+| `src/components/NewOrderModal.tsx` | Acepta `initialPatientId` y preselecciona el paciente cuando la orden se crea desde su expediente. |
+| `src/components/ProfilePanel.tsx` | Se retiro Comunicacion de las opciones de pestana por defecto del paciente. |
+
+### Supabase
+Sin cambios de schema ni RLS. La implementacion reutiliza tablas ya existentes y endurecidas:
+
+- `chat_messages.patient_id`, `chat_messages.channel`, `chat_messages.t`, `chat_messages.tm`, `chat_messages.body`.
+- `inbox_items.patient_id`, `inbox_items.src`, `inbox_items.sev`, `inbox_items.subject`, `inbox_items.preview`.
+- RLS vigente de fase 2C: doctor dueno o secretaria vinculada pueden leer/enviar mensajes del paciente autorizado.
+
+### Decisiones tecnicas
+- No se implemento todavia integracion real con WhatsApp Business API. El canal `patient` queda como superficie preparada para ese bridge.
+- No se creo una tabla nueva de conversaciones; el MVP aprovecha `patient_id + channel` como agrupador.
+- El expediente mantiene boton "Abrir expediente" desde Inbox para navegar al contexto clinico cuando sea necesario, pero la conversacion queda centralizada.
+
+### Validacion
+- `npx.cmd tsc -b` paso sin errores.
+- `npm.cmd run build` paso fuera del sandbox. Dentro del sandbox Vite/esbuild fallo por permisos de Windows al leer `../..`, el mismo tipo de restriccion local ya observada en este entorno.
+- Warning restante: bundle principal mayor a 500 kB; no se hizo code-splitting en esta modificacion para evitar refactor transversal.
+
+### Pendientes pre-produccion
+- Definir proveedor final de WhatsApp Business API y flujo de webhooks inbound/outbound.
+- Agregar auditoria especifica para mensajes si se decide que el canal transporta informacion clinica sensible.
+- Definir estados de lectura/resolucion de `inbox_items` desde la UI CRM; hoy solo se muestran como senales recientes.
+
+---
 ## Apéndice — Benchmark Eleonor (mayo 2026)
 
 | Módulo Eleonor | Estado Muguerza Connect | Acción |

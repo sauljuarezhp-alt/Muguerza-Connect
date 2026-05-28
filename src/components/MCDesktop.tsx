@@ -35,6 +35,7 @@ export function MCDesktop({ tweaks }: Props) {
   const [query, setQuery] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
   const [showNewOrder, setShowNewOrder] = useState(false);
+  const [newOrderPatientId, setNewOrderPatientId] = useState<string | undefined>(undefined);
   const [showProfile, setShowProfile] = useState(false);
   const [hoveredNav, setHoveredNav] = useState<string|null>(null);
   const [hoverOrder, setHoverOrder] = useState(false);
@@ -102,6 +103,10 @@ export function MCDesktop({ tweaks }: Props) {
   }, []);
 
   const goPatient = (id: string) => { setPatientId(id); setScreen('patient'); };
+  const openNewOrder = (id?: string) => {
+    setNewOrderPatientId(id);
+    setShowNewOrder(true);
+  };
 
   // El buscador ahora filtra sobre los pacientes reales de la DB
   const searchResults = query.trim().length > 1
@@ -215,7 +220,7 @@ export function MCDesktop({ tweaks }: Props) {
             )}
           </div>
 
-          <button onClick={() => setShowNewOrder(true)}
+          <button onClick={() => openNewOrder()}
             onMouseEnter={() => setHoverOrder(true)}
             onMouseLeave={() => setHoverOrder(false)}
             style={{background: hoverOrder ? brand+'CC' : brand, color:'#fff', border:0, padding:'8px 14px', borderRadius:8, fontFamily:'Franklin Gothic', fontWeight:500, fontSize:12.5, display:'inline-flex', alignItems:'center', gap:6, cursor:'pointer', flexShrink:0, transition:'background 0.15s'}}>
@@ -258,7 +263,7 @@ export function MCDesktop({ tweaks }: Props) {
         <div style={{flex:1, overflow:'auto', padding:'20px 24px'}} onClick={() => setShowNotifications(false)}>
           {screen === 'dashboard'    && <DesktopDashboard goPatient={goPatient} brand={brand} setScreen={setScreen} setShowNewOrder={setShowNewOrder}/>}
           {screen === 'patients'     && <DesktopPatients goPatient={goPatient} brand={brand}/>}
-          {screen === 'patient'      && <DesktopPatient patientId={patientId} onBack={() => setScreen('patients')} brand={brand}/>}
+          {screen === 'patient'      && <DesktopPatient patientId={patientId} onBack={() => setScreen('patients')} brand={brand} onNewOrder={openNewOrder}/>}
           {screen === 'inbox'        && <DesktopInbox goPatient={goPatient} brand={brand}/>}
           {screen === 'agenda'       && <DesktopAgenda brand={brand}/>}
           {screen === 'aseguradoras' && <DesktopAseguradoras brand={brand} goPatient={goPatient}/>}
@@ -266,7 +271,7 @@ export function MCDesktop({ tweaks }: Props) {
         </div>
       </main>
 
-      {showNewOrder && <NewOrderModal brand={brand} onClose={() => setShowNewOrder(false)}/>}
+      {showNewOrder && <NewOrderModal brand={brand} initialPatientId={newOrderPatientId} onClose={() => setShowNewOrder(false)}/>}
       {showProfile  && <ProfilePanel doctor={doctor} prefs={prefs} brand={brand} onClose={() => setShowProfile(false)} onPrefsChange={handlePrefsChange}/>}
     </div>
   );

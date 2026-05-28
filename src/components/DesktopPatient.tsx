@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Ico } from '../data/icons';
-import { getPatient, listLabsForPatient, listMessages, sendMessage } from '../api';
+import { getPatient, listLabsForPatient } from '../api';
 import { listDocuments, listHistory } from '../api/secretary';
-import type { ChatMessage, Patient } from '../types';
+import type { Patient } from '../types';
 import { SectionHeader } from './SectionHeader';
 import { DocumentViewer, type DocRef } from './DocumentViewer';
 import { useTheme } from '../context/ThemeContext';
@@ -11,20 +11,18 @@ import { PatientStoryView } from './PatientStoryView';
 import { PrecitaSummaryCard } from './PrecitaSummaryCard';
 import { getPrecitaForSlot, type PrecitaRecord } from '../api/precita';
 
-interface Props { patientId: string; onBack: () => void; brand: string; }
+interface Props { patientId: string; onBack: () => void; brand: string; onNewOrder: (patientId: string) => void; }
 
-export function DesktopPatient({ patientId, onBack, brand }: Props) {
+export function DesktopPatient({ patientId, onBack, brand, onNewOrder }: Props) {
   const { tokens } = useTheme();
   const [p, setP] = useState<Patient | null>(null);
   const [labs, setLabs] = useState<any[]>([]);
-  const [chats, setChats] = useState<{ nurse: ChatMessage[]; patient: ChatMessage[] }>({ nurse: [], patient: [] });
   const [patientDocs, setPatientDocs] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [tab, setTab] = useState('resumen');
   const [viewingDoc, setViewingDoc] = useState<DocRef | null>(null);
-  const [drafts, setDrafts] = useState({ nurse: '', patient: '' });
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
   const [historyPrecitas, setHistoryPrecitas] = useState<Record<string, PrecitaRecord | null>>({});
 
@@ -32,19 +30,15 @@ export function DesktopPatient({ patientId, onBack, brand }: Props) {
     async function loadPatientData() {
       setLoading(true);
       try {
-        // Ejecutamos 4 consultas a Supabase en paralelo
-        const [patData, labsData, nurseChats, patientChats, docs, hist] = await Promise.all([
+        const [patData, labsData, docs, hist] = await Promise.all([
           getPatient(patientId),
           listLabsForPatient(patientId),
-          listMessages(patientId, 'nurse'),
-          listMessages(patientId, 'patient'),
           listDocuments(patientId),
           listHistory(patientId),
         ]);
 
         setP(patData);
         setLabs(labsData);
-        setChats({ nurse: nurseChats, patient: patientChats });
         setPatientDocs(docs);
         setHistory(hist);
       } catch (e) {
@@ -72,24 +66,6 @@ export function DesktopPatient({ patientId, onBack, brand }: Props) {
     return () => { supabase.removeChannel(channel); };
   }, [patientId]);
 
-  const handleSendMessage = async (key: 'nurse' | 'patient') => {
-    const text = drafts[key].trim();
-    if (!text) return;
-    const now = new Date();
-    const tm = `hoy ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-    
-    // 1. Actualización optimista en UI (se siente instantáneo)
-    setChats(c => ({ ...c, [key]: [...c[key], { t: 'out', tm, body: text }] }));
-    setDrafts(d => ({ ...d, [key]: '' }));
-
-    // 2. Guardado real en Supabase
-    try {
-      await sendMessage(patientId, key, text, tm);
-    } catch (e) {
-      console.error("Error guardando mensaje en DB", e);
-    }
-  };
-
   const toggleHistoryEvent = async (event: any) => {
     const nextId = expandedHistoryId === event.id ? null : event.id;
     setExpandedHistoryId(nextId);
@@ -107,7 +83,6 @@ export function DesktopPatient({ patientId, onBack, brand }: Props) {
     {id:'resumen', label:'Resumen'},
     {id:'estudios', label:'Estudios', n: labs.length > 0 ? labs.length : undefined},
     {id:'aseguradora', label:'Aseguradora'},
-    {id:'comunicacion', label:'Comunicación', n: (chats.nurse.length + chats.patient.length) || undefined},
     {id:'historial', label:'Historial'},
     {id:'story', label:'👤 Modo paciente'},
   ];
@@ -134,8 +109,7 @@ export function DesktopPatient({ patientId, onBack, brand }: Props) {
           </div>
         </div>
         <div style={{display:'flex', gap:8, alignSelf:'end'}}>
-          <button style={{background:'rgba(255,255,255,0.15)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', padding:'8px 14px', borderRadius:8, fontSize:12, fontFamily:'Franklin Gothic', fontWeight:500, display:'inline-flex', alignItems:'center', gap:6, cursor:'pointer'}}>{Ico.phone} Videollamada</button>
-          <button style={{background:'#fff', color:brand, border:0, padding:'8px 14px', borderRadius:8, fontSize:12, fontFamily:'Franklin Gothic', fontWeight:500, display:'inline-flex', alignItems:'center', gap:6, cursor:'pointer'}}>{Ico.pill} Nueva orden</button>
+          <button onClick={() => onNewOrder(patientId)} style={{background:'#fff', color:brand, border:0, padding:'8px 14px', borderRadius:8, fontSize:12, fontFamily:'Franklin Gothic', fontWeight:500, display:'inline-flex', alignItems:'center', gap:6, cursor:'pointer'}}>{Ico.pill} Nueva orden</button>
         </div>
       </div>
 
@@ -287,41 +261,6 @@ export function DesktopPatient({ patientId, onBack, brand }: Props) {
               ))}
             </div>
           </div>
-        </div>
-      )}
-
-      {tab === 'comunicacion' && (
-        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
-          {([{key:'nurse' as const, title:'Enfermería · Connect', placeholder:'Mensaje a enfermería…'},{key:'patient' as const, title:'Paciente · WhatsApp', placeholder:'Mensaje al paciente…'}]).map((ch, ci) => (
-            <div key={ci} style={{background:tokens.surfaceAlt, border:`1px solid ${tokens.border}`, borderRadius:12, overflow:'hidden', display:'flex', flexDirection:'column', height:460}}>
-              <div style={{padding:'10px 14px', background:tokens.surface, borderBottom:`1px solid ${tokens.border}`, fontFamily:'Franklin Gothic', fontWeight:500, fontSize:13, color:tokens.text}}>{ch.title}</div>
-              <div style={{flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:8}}>
-                {chats[ch.key].length === 0 ? (
-                  <div style={{textAlign:'center', color:tokens.textSecondary, fontSize:12, marginTop:20}}>No hay mensajes en este canal.</div>
-                ) : chats[ch.key].map((m, i) => (
-                  <div key={i} style={{alignSelf: m.t==='out'?'flex-end':'flex-start', maxWidth:'82%'}}>
-                    <div style={{padding:'8px 12px', borderRadius:12, background: m.t==='out'?brand:tokens.surface, color: m.t==='out'?'#fff':tokens.text, fontSize:12.5, lineHeight:1.4}}>{m.body}</div>
-                    <div style={{fontSize:10, color:tokens.textSecondary, marginTop:2, textAlign: m.t==='out'?'right':'left', padding:'0 4px'}}>{m.tm}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{padding:10, background:tokens.surface, borderTop:`1px solid ${tokens.border}`, display:'flex', gap:8, alignItems:'flex-end'}}>
-                <textarea
-                  value={drafts[ch.key]}
-                  onChange={e => setDrafts(d => ({ ...d, [ch.key]: e.target.value }))}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(ch.key); } }}
-                  placeholder={ch.placeholder}
-                  rows={1}
-                  style={{flex:1, resize:'none', border:`1px solid ${tokens.border}`, borderRadius:18, padding:'8px 14px', fontSize:12.5, fontFamily:'inherit', background:tokens.surfaceAlt, color:tokens.text, outline:'none', maxHeight:80, lineHeight:1.4, boxSizing:'border-box'}}
-                />
-                <button onClick={() => handleSendMessage(ch.key)} disabled={!drafts[ch.key].trim()}
-                  style={{width:36, height:36, borderRadius:999, border:0, background: drafts[ch.key].trim() ? brand : tokens.border, color:'#fff', cursor: drafts[ch.key].trim() ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}
-                >
-                  {Ico.send}
-                </button>
-              </div>
-            </div>
-          ))}
         </div>
       )}
 

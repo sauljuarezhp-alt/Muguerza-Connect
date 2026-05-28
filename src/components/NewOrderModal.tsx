@@ -4,9 +4,9 @@ import { useTheme } from '../context/ThemeContext';
 import { listPatients, createPendingItem } from '../api';
 import type { Patient } from '../types';
 
-interface Props { brand: string; onClose: () => void; }
+interface Props { brand: string; onClose: () => void; initialPatientId?: string; }
 
-export function NewOrderModal({ brand, onClose }: Props) {
+export function NewOrderModal({ brand, onClose, initialPatientId }: Props) {
   const { tokens } = useTheme();
   const [type, setType] = useState('lab');
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -22,7 +22,12 @@ export function NewOrderModal({ brand, onClose }: Props) {
       try {
         const data = await listPatients();
         setPatients(data);
-        if (data.length > 0) setPatientId(data[0].id);
+        const initialPatientExists = initialPatientId && data.some(p => p.id === initialPatientId);
+        if (initialPatientExists) {
+          setPatientId(initialPatientId);
+        } else if (data.length > 0) {
+          setPatientId(data[0].id);
+        }
       } catch (e) {
         console.error("Error en modal de orden:", e);
       } finally {
@@ -30,7 +35,7 @@ export function NewOrderModal({ brand, onClose }: Props) {
       }
     }
     loadPatients();
-  }, []);
+  }, [initialPatientId]);
 
   const types = [
     {id:'lab', label:'Laboratorio', ico: Ico.flask},
