@@ -608,4 +608,4 @@ Riesgos al hacerlo:
 
 ### Validación
 - Cambio documental únicamente; no modifica código de runtime ni Supabase.
-- No requiere build.
+

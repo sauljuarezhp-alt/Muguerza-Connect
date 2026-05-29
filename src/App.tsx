@@ -5,6 +5,7 @@ import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { MCDesktop } from './components/MCDesktop';
 import { LoginScreen } from './components/LoginScreen';
 import { SecretaryDesktop } from './components/SecretaryDesktop';
+import { ClinicDesktop } from './components/ClinicDesktop';
 import { ThemeProvider } from './context/ThemeContext';
 import { PrecitaForm } from './components/PrecitaForm';
 
@@ -16,7 +17,7 @@ export const DEFAULT_TWEAKS = {
   brandColor: '#671E75',
 };
 
-type Role = 'doctor' | 'secretary' | null;
+type Role = 'doctor' | 'secretary' | 'clinic_staff' | null;
 
 const ENABLE_DEMO_MAC_SHELL = import.meta.env.VITE_DEMO_MAC_SHELL === 'true';
 
@@ -25,6 +26,8 @@ async function detectRole(userId: string): Promise<Role> {
   if (doctor) return 'doctor';
   const { data: secretary } = await supabase.from('secretaries').select('id').eq('user_id', userId).maybeSingle();
   if (secretary) return 'secretary';
+  const { data: clinicStaff } = await supabase.from('clinic_staff').select('id').eq('user_id', userId).eq('active', true).maybeSingle();
+  if (clinicStaff) return 'clinic_staff';
   return null;
 }
 
@@ -95,6 +98,7 @@ function AuthApp() {
       </div>
     );
     if (role === 'secretary') return <SecretaryDesktop />;
+    if (role === 'clinic_staff') return <ClinicDesktop />;
     return <MCDesktop tweaks={DEFAULT_TWEAKS} />;
   }
 
