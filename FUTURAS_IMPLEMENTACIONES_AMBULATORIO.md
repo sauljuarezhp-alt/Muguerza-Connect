@@ -99,6 +99,434 @@ Archivo auditado: `src/api/clinic.ts`.
 
 Mini Plan 1 debe ser `clinic_patients`: crear la tabla propia de pacientes de clinica, definir RLS por `clinic_id`, migrar/sembrar los IDs demo actuales, actualizar lecturas para mostrar nombre real desde `clinic_patients`, y dejar documentado que `public.patients` sigue perteneciendo al modulo de consultorio privado.
 
+### Mini Plan 1 aplicado - `clinic_patients` y separacion formal de pacientes - 29 de mayo de 2026
+
+**Estado:** Implementado por Codex en Supabase vivo y codigo local. Este bloque
+crea la identidad propia de pacientes para Clinicas Ambulatorias sin abrir ni
+modificar `public.patients`, que sigue perteneciendo al modulo de consultorio
+privado.
+
+#### Supabase aplicado
+
+- Migraciones aplicadas en Supabase:
+  - `20260529012730 clinic_patients_identity`
+  - `20260529013637 clinic_patients_fk_indexes`
+- Migraciones versionadas localmente:
+  - `supabase/migrations/20260529012537_clinic_patients_identity.sql`
+  - `supabase/migrations/20260529013611_clinic_patients_fk_indexes.sql`
+- Tabla nueva: `public.clinic_patients`.
+- `public.clinic_patients.id` es `text` para conservar compatibilidad con los `patient_id` existentes (`PAC-AMB-*`).
+- `private.set_updated_at()` fue reemplazada con `SET search_path = private, public, auth`, corrigiendo el Advisor de seguridad `function_search_path_mutable`.
+- RLS activado en `clinic_patients`.
+- Grants:
+  - `anon`: sin acceso.
+  - `authenticated`: `select`, `insert`, `update`.
+  - No se otorgo `delete`; bajas deben ser logicas con `active = false`.
+- Policies:
+  - `clinic_staff_select_clinic_patients`
+  - `clinic_staff_insert_clinic_patients`
+  - `clinic_staff_update_clinic_patients`
+  - Todas usan `private.is_clinic_staff_for(clinic_id)`.
+- FKs agregadas hacia `clinic_patients(id)`:
+  - `service_appointments.patient_id`
+  - `pre_auth_requests.patient_id`
+  - `service_results.patient_id`
+  - `clinic_conversations.patient_id`
+  - `clinic_resource_assignments.patient_id`
+- Indices agregados:
+  - `clinic_patients_clinic_idx`
+  - `clinic_patients_clinic_active_idx`
+  - `clinic_patients_full_name_idx`
+  - `clinic_patients_phone_idx`
+  - `clinic_patients_insurer_idx`
+  - `clinic_patients_clinic_external_ref_unique`
+  - `clinic_conversations_patient_id_idx`
+  - `clinic_resource_assignments_patient_id_idx`
+  - `pre_auth_requests_patient_id_idx`
+  - `service_results_patient_id_idx`
+
+#### Backfill demo
+
+- Se crearon 14 registros en `clinic_patients`.
+- 5 pacientes tomaron nombre/telefono real desde `clinic_conversations`.
+- 9 pacientes quedaron con placeholder explicito `Paciente PAC-AMB-*` y nota: `Backfill demo: nombre real pendiente de depurar en modulo clinicas.`
+- Validacion de integridad:
+  - `service_appointments`: 0 registros sin `clinic_patient`.
+  - `pre_auth_requests`: 0 registros sin `clinic_patient`.
+  - `service_results`: 0 registros sin `clinic_patient`.
+  - `clinic_conversations`: 0 registros sin `clinic_patient`.
+  - `clinic_resource_assignments`: 0 registros sin `clinic_patient`.
+
+#### Codigo local actualizado
+
+| Archivo | Cambio |
+|---|---|
+| `src/types.ts` | Agrega `ClinicPatient` y campos joined `patient_name`, `patient_phone`, `patient_insurer`, `patient_policy_number` donde aplica. |
+| `src/api/clinic.ts` | Las lecturas de citas, pre-auth, resultados, conversaciones y asignaciones de recursos ahora hacen join contra `clinic_patients`. |
+| `src/components/ClinicDesktop.tsx` | Agenda, Panel del dia, Pre-auth, Resultados, Bandeja e Infraestructura muestran nombre de paciente desde `clinic_patients` y dejan `patient_id` como referencia secundaria. |
+
+#### Validacion realizada
+
+- `npx.cmd tsc -b` paso sin errores.
+- `npm.cmd run build` paso fuera del sandbox. Dentro del sandbox fallo por el error conocido de Vite/esbuild: `Cannot read directory "../..": Acceso denegado`.
+- Supabase:
+  - `clinic_patients` existe con RLS activo.
+  - Staff clinic simulado (`clinic_staff.user_id`) ve 14 pacientes.
+  - Doctor simulado ve 0 pacientes clinic.
+  - `anon` no tiene grants sobre `clinic_patients`.
+  - PostgREST schema cache fue recargado con `pg_notify('pgrst', 'reload schema')`.
+- Advisors:
+  - Security: se elimino `function_search_path_mutable`; queda pendiente `auth_leaked_password_protection`, que se activa en Supabase Dashboard.
+  - Performance: se corrigieron los nuevos FKs hacia `clinic_patients` con indices dedicados. Persisten otros FKs no indexados fuera y dentro del modulo clinic que se atenderan en un bloque de performance/hardening posterior.
+
+#### Limitaciones restantes
+
+- `clinic_patients` aun no tiene UI propia de alta/edicion; el backfill deja 9 placeholders demo que deben depurarse cuando exista flujo operativo.
+- No se implemento audit log general, Storage clinic privado, WhatsApp real, doble booking, MFA ni mutaciones via RPC/Edge en este bloque.
+- `clinic_conversations.patient_name` sigue existiendo como columna legacy/denormalizada para compatibilidad, pero la UI ya prioriza `clinic_patients.full_name`.
+
+#### Proximo mini plan recomendado
+
+Mini Plan 2 queda aplicado abajo. El siguiente bloque recomendado es Mini Plan 3: `clinic_audit_log` para trazabilidad de cambios en citas, pre-autorizaciones, conversaciones, recursos y resultados, antes de WhatsApp real o Storage clinic.
+
+### Mini Plan 2 aplicado - Endurecimiento RLS, grants y mutaciones seguras clinic - 29 de mayo de 2026
+
+**Estado:** Implementado por Codex en Supabase vivo y codigo local. Este bloque
+reduce permisos directos en tablas clinic, reemplaza policies `ALL`, agrega
+validaciones de consistencia clinica y mueve las mutaciones sensibles del cliente
+a RPCs autenticadas.
+
+#### Supabase aplicado
+
+- Migracion aplicada en Supabase:
+  - `20260529161059 clinic_rls_rpc_hardening`
+- Migracion versionada localmente:
+  - `supabase/migrations/20260529160512_clinic_rls_rpc_hardening.sql`
+- RLS confirmado activo en las 12 tablas clinic:
+  - `clinics`, `clinic_staff`, `clinic_services`, `clinic_patients`
+  - `service_appointments`, `pre_auth_requests`, `service_results`, `clinical_escalations`
+  - `clinic_conversations`, `clinic_chat_messages`
+  - `clinic_resources`, `clinic_resource_assignments`
+- Grants endurecidos:
+  - `anon`: sin grants utiles en tablas clinic y sin execute sobre las RPCs nuevas.
+  - `authenticated`: `select` en tablas clinic para lecturas RLS; `insert/update` directo solo en `clinic_patients`.
+  - Se removieron grants amplios `DELETE`, `TRUNCATE`, `TRIGGER` y `REFERENCES` de `authenticated`.
+- Policies `ALL` eliminadas en:
+  - `clinic_chat_messages`
+  - `clinic_conversations`
+  - `clinic_resources`
+  - `clinic_resource_assignments`
+- Policies ahora son explicitas por `SELECT`, `INSERT`, `UPDATE` y validan staff activo/clinica via helpers privados.
+- Helpers privados agregados con `search_path` fijo:
+  - `private.current_clinic_id()`
+  - `private.can_access_clinic_patient(patient_id text)`
+  - `private.can_access_conversation(conversation_id uuid)`
+  - `private.can_access_resource_assignment(assignment_id uuid)`
+  - helpers de consistencia para paciente, servicio, cita, conversacion, recurso y staff por clinica.
+- Triggers de integridad agregados para bloquear cruces de clinica en:
+  - `service_appointments`
+  - `pre_auth_requests`
+  - `service_results`
+  - `clinic_conversations`
+  - `clinic_chat_messages`
+  - `clinic_resource_assignments`
+- RPCs publicas seguras creadas con `SECURITY DEFINER`, `search_path` fijo, `EXECUTE` solo para `authenticated`:
+  - `public.update_clinic_appointment_status`
+  - `public.update_clinic_preauth_status`
+  - `public.send_clinic_staff_message`
+  - `public.update_clinic_conversation_status`
+  - `public.mark_clinic_conversation_read`
+  - `public.assign_clinic_resource`
+  - `public.free_clinic_resource_assignment`
+- Indices clinic agregados para FKs marcadas por Performance Advisor:
+  - `clinic_chat_messages_author_staff_id_idx`
+  - `clinic_conversations_related_appointment_id_idx`
+  - `clinic_resource_assignments_assigned_by_idx`
+  - `clinical_escalations_service_appointment_id_idx`
+  - `clinical_escalations_triggered_by_idx`
+  - `clinics_hub_clinic_id_idx`
+  - `pre_auth_requests_created_by_idx`
+  - `service_appointments_created_by_idx`
+  - `service_appointments_doctor_id_idx`
+  - `service_appointments_service_id_idx`
+  - `service_results_reviewed_by_idx`
+- PostgREST schema cache recargado con `pg_notify('pgrst', 'reload schema')`.
+
+#### Codigo local actualizado
+
+| Archivo | Cambio |
+|---|---|
+| `src/api/clinic.ts` | `updateAppointmentStatus`, `updatePreAuthStatus`, `sendConversationMessage`, `updateConversationStatus`, `markConversationRead`, `manualAssignResource` y `freeResource` ahora llaman RPCs. Ya no hacen `update/insert` directo sobre tablas sensibles. |
+
+#### Validacion realizada
+
+- `npx.cmd tsc -b` paso sin errores.
+- `npm.cmd run build` paso fuera del sandbox. Dentro del sandbox fallo por el error conocido de Vite/esbuild: `Cannot read directory "../..": Acceso denegado`.
+- Supabase:
+  - RLS activo en las 12 tablas clinic.
+  - `anon` no tiene grants utiles sobre tablas clinic ni execute en las RPCs nuevas.
+  - `authenticated` ya no tiene `DELETE`, `TRUNCATE`, `TRIGGER`, `REFERENCES`, ni writes directos en tablas sensibles clinic.
+  - No quedan policies `ALL` en `clinic_chat_messages`, `clinic_conversations`, `clinic_resources` ni `clinic_resource_assignments`.
+  - Staff clinic activo pudo ejecutar, en transaccion con rollback: update cita, update preauth, enviar mensaje, cambiar conversacion, marcar leido y asignar recurso.
+  - `send_clinic_staff_message` lleno `author_staff_id` correctamente en prueba transaccional con rollback.
+  - Doctor privado simulado ve 0 `clinic_patients` y RPC de cita devuelve `false`.
+  - Secretaria privada simulada ve 0 `clinic_patients` y RPC de cita devuelve `false`.
+  - Staff clinic inactivo simulado ve 0 `clinic_patients` y RPC de cita devuelve `false`.
+  - Insercion cruzada paciente/clinica fue bloqueada por trigger de integridad en prueba transaccional con rollback.
+- Advisors:
+  - Performance: ya no quedan FKs clinic sin indice del bloque priorizado. Persisten FKs no-clinic sin indice en modulo consultorio/legacy.
+  - Security: persiste `auth_leaked_password_protection`, activable desde Supabase Dashboard.
+  - Security: aparecen warnings `authenticated_security_definer_function_executable` para las 7 RPCs nuevas. Son intencionales en este bloque porque las RPCs son el endpoint autenticado que reemplaza writes directos; cada una valida `auth.uid()`, staff activo y clinica antes de mutar. Deben reevaluarse en Mini Plan 3 al agregar audit log/rate limiting o si se decide mover estas mutaciones a Edge Functions.
+
+#### Limitaciones restantes
+
+- Todavia no existe `clinic_audit_log`; las RPCs validan autorizacion e integridad, pero aun no dejan ledger historico de cada cambio.
+- Las RPCs no implementan rate limiting, motivo obligatorio ni metadata de IP/user-agent; eso debe agregarse con `clinic_audit_log` o Edge Functions.
+- WhatsApp real, Storage clinic privado, MFA obligatorio, signed URLs, doble booking avanzado y cifrado de notas siguen fuera de este bloque.
+- Los warnings de `SECURITY DEFINER` son aceptados temporalmente por diseno; no deben ignorarse antes de piloto real.
+
+#### Proximo mini plan recomendado
+
+Mini Plan 3 queda aplicado abajo. El siguiente bloque recomendado es Mini Plan 4:
+rate limiting y motivos obligatorios para mutaciones sensibles, aprovechando
+`clinic_audit_log` como ledger operativo. Esto debe ocurrir antes de abrir
+WhatsApp real o cargas de documentos/resultados a Storage.
+
+### Mini Plan 3 aplicado - `clinic_audit_log` y trazabilidad de mutaciones clinic - 29 de mayo de 2026
+
+**Estado:** Implementado por Codex en Supabase vivo y migracion local. Este
+bloque agrega auditoria append-only para las RPCs clinic creadas en Mini Plan 2.
+No crea UI nueva y no cambia las firmas de `src/api/clinic.ts`.
+
+#### Supabase aplicado
+
+- Migracion aplicada en Supabase:
+  - `20260529163216 clinic_audit_log`
+- Migracion versionada localmente:
+  - `supabase/migrations/20260529162817_clinic_audit_log.sql`
+- Tabla nueva: `public.clinic_audit_log`.
+- Columnas principales:
+  - `clinic_id`, `actor_user_id`, `actor_staff_id`
+  - `action`, `entity_table`, `entity_id`
+  - `patient_id`, `appointment_id`, `conversation_id`, `resource_assignment_id`
+  - `old_data`, `new_data`, `metadata`, `created_at`
+- RLS:
+  - activo en `clinic_audit_log`.
+  - `anon`: sin acceso.
+  - `authenticated`: solo `select`.
+  - policy `clinic_audit_log_select_own_clinic` usa `private.is_clinic_staff_for(clinic_id)`.
+  - no hay grants directos `insert/update/delete` para clientes.
+- Helper privado:
+  - `private.write_clinic_audit_log(...)` con `SECURITY DEFINER` y `search_path = private, public, auth`.
+  - `authenticated` no tiene `execute` sobre este helper privado.
+- RPCs reemplazadas con versiones auditadas:
+  - `public.update_clinic_appointment_status`
+  - `public.update_clinic_preauth_status`
+  - `public.send_clinic_staff_message`
+  - `public.update_clinic_conversation_status`
+  - `public.mark_clinic_conversation_read`
+  - `public.assign_clinic_resource`
+  - `public.free_clinic_resource_assignment`
+- Cada RPC escribe accion semantica en `clinic_audit_log` con actor, staff,
+  entidad, referencias clinicas y `metadata.rpc`.
+- Indices agregados:
+  - `clinic_audit_log_clinic_created_idx`
+  - `clinic_audit_log_actor_user_created_idx`
+  - `clinic_audit_log_actor_staff_created_idx`
+  - `clinic_audit_log_patient_created_idx`
+  - `clinic_audit_log_appointment_created_idx`
+  - `clinic_audit_log_conversation_created_idx`
+  - `clinic_audit_log_resource_assignment_created_idx`
+  - `clinic_audit_log_entity_idx`
+
+#### Validacion realizada
+
+- `npx.cmd tsc -b` paso sin errores.
+- `npm.cmd run build` paso fuera del sandbox. Dentro del sandbox fallo por el error conocido de Vite/esbuild: `Cannot read directory "../..": Acceso denegado`.
+- Supabase:
+  - tabla `clinic_audit_log` creada con columnas esperadas.
+  - RLS activo.
+  - `anon` no tiene `select`.
+  - `authenticated` tiene solo `select`; no tiene `insert`, `update` ni `delete`.
+  - `authenticated` no puede ejecutar `private.write_clinic_audit_log(...)`.
+  - Staff clinic activo puede leer logs de su clinica.
+  - Doctor privado simulado lee 0 logs clinic.
+  - Secretaria privada simulada lee 0 logs clinic.
+  - Staff clinic inactivo simulado lee 0 logs clinic.
+  - Prueba transaccional con rollback confirmo auditoria para:
+    - `appointment.status_updated`
+    - `preauth.status_updated`
+    - `conversation.message_sent`
+    - `conversation.status_updated`
+    - `conversation.marked_read`
+    - `resource_assignment.assigned`
+    - `resource_assignment.freed`
+  - Las filas auditadas incluyeron `actor_user_id`, `actor_staff_id`, `patient_id`, `new_data` y `metadata.rpc`; las mutaciones update/free incluyeron `old_data`.
+- Advisors:
+  - Security: persiste `auth_leaked_password_protection`.
+  - Security: persisten warnings `authenticated_security_definer_function_executable` para las 7 RPCs publicas. Siguen siendo intencionales; ahora cada RPC valida staff/clinica y escribe audit log. Deben revisarse de nuevo si Mini Plan 4 mueve mutaciones a Edge Functions o agrega rate limiting fuerte.
+  - Performance: no aparecieron FKs no indexados para `clinic_audit_log`; los indices nuevos aparecen como `unused_index`, esperado porque son recientes y aun sin trafico real.
+
+#### Limitaciones restantes
+
+- `clinic_audit_log` no tiene UI de consulta todavia.
+- Las RPCs aun no exigen motivo operativo del usuario.
+- No hay rate limiting por actor/minuto.
+- No se captura IP/user-agent real porque no existe Edge Function intermedia para estas mutaciones.
+- WhatsApp real, Storage clinic privado, signed URLs, MFA obligatorio y cifrado at-rest siguen pendientes.
+
+### Contrato backend/API para Pacientes Ambulatorios - 29 de mayo de 2026
+
+**Estado:** Implementado por Codex en Supabase vivo y codigo local. Este bloque
+deja listo el contrato de datos para que Claude implemente la interfaz de
+Pacientes del modulo Clinicas Ambulatorias sin mezclar `public.patients` del
+consultorio privado.
+
+#### Supabase verificado
+
+- Proyecto vivo: `egehyxbtxjnlkwvlndgr`.
+- Migracion aplicada en Supabase: `clinic_patient_operational_views`.
+- Migracion versionada localmente:
+  - `supabase/migrations/20260529174500_clinic_patient_operational_views.sql`
+- Tablas usadas por el contrato: `clinic_patients`, `service_appointments`,
+  `pre_auth_requests`, `service_results`, `clinic_conversations`,
+  `clinic_resource_assignments` y `clinic_audit_log`.
+- Vistas creadas:
+  - `public.clinic_patient_operational_summary`
+  - `public.clinic_patient_timeline`
+- Ambas vistas usan `security_invoker = true`, revocan acceso a `anon` y
+  otorgan solo `select` a `authenticated`, preservando RLS de las tablas base.
+- Conteo vivo verificado: 14 `clinic_patients`, 12 `service_appointments`, 9
+  `pre_auth_requests`, 3 `service_results`, 5 `clinic_conversations`, 9
+  `clinic_resource_assignments`, 0 eventos en `clinic_audit_log`.
+- Muestra SQL verificada: pacientes `PAC-AMB-001` a `PAC-AMB-005` ya agregan
+  relaciones reales con citas, preauth, resultados y conversaciones.
+
+#### Codigo local actualizado
+
+| Archivo | Cambio |
+|---|---|
+| `src/types.ts` | Agrega `ClinicPatientListItem`, `ClinicPatientSummary`, `ClinicPatientTimelineEvent`, `ClinicPatientTreatmentStatus`. |
+| `src/api/clinic.ts` | Agrega contrato de pacientes: `listClinicPatients`, `getClinicPatient`, `getClinicPatientSummary`, `listClinicPatientTimeline` y lecturas por paciente de citas, preauth, resultados, conversaciones y recursos. `listClinicPatients` consume `clinic_patient_operational_summary`; `listClinicPatientTimeline` consume `clinic_patient_timeline`. |
+| `src/api/index.ts` | Exporta `clinic.ts` desde el barrel global. |
+
+#### Decisiones tecnicas
+
+- El contrato lee exclusivamente tablas del modulo clinic. No consulta
+  `public.patients`.
+- El listado/resumen operacional se calcula en la vista
+  `clinic_patient_operational_summary` desde fuentes reales: citas,
+  preautorizaciones, resultados criticos, conversaciones abiertas y
+  asignaciones activas de recurso.
+- `is_recurrent` se calcula con mas de una cita o mas de una visita completada.
+- `current_status` distingue `scheduled`, `checked_in`, `in_progress`,
+  `follow_up_required`, `completed`, `escalated`, `cancelled` y `no_activity`.
+- `clinic_patient_timeline` arma un timeline operativo combinando
+  `service_appointments`, `pre_auth_requests`, `service_results`,
+  `clinic_conversations`, `clinic_resource_assignments` y `clinic_audit_log`;
+  `listClinicPatientTimeline` lo consume directamente.
+- `clinic_audit_log` se usa como fuente de timeline si existen eventos; no se
+  inventan eventos cuando la tabla esta vacia.
+
+#### Validacion realizada
+
+- `npx.cmd tsc -b` paso sin errores.
+- `npm.cmd run build` no paso dentro de este entorno por el error conocido de
+  Vite/esbuild: `Cannot read directory "../..": Acceso denegado` y no poder
+  resolver `vite.config.ts`. El fallo ocurre despues de `tsc -b`.
+- Supabase SQL confirmo que las tablas vivas y columnas requeridas existen y
+  que hay datos relacionables por `clinic_patients.id`.
+- Supabase SQL confirmo que `clinic_patient_operational_summary` devuelve
+  estado operacional por paciente y que `clinic_patient_timeline` devuelve
+  eventos de resultado, cita, conversacion y preauth para `PAC-AMB-005`.
+
+#### Handoff para Claude
+
+Claude puede construir la UI de Pacientes usando:
+
+- `listClinicPatients(clinicId)` para la tabla/listado.
+- `getClinicPatientSummary(patientId)` para el header y KPIs del expediente.
+- `listClinicPatientTimeline(patientId)` para historial.
+- Lecturas especificas por tab:
+  - `listClinicPatientAppointments(patientId)`
+  - `listClinicPatientPreAuthRequests(patientId)`
+  - `listClinicPatientResults(patientId)`
+  - `listClinicPatientConversations(patientId)`
+  - `listClinicPatientResourceAssignments(patientId)`
+
+No debe crear migraciones, no debe consultar `public.patients` y no debe
+inventar datos mock permanentes.
+
+### Modelo de pago, pre-auth bloqueante y metricas economicas clinic - 29 de mayo de 2026
+
+**Estado:** Implementado por Codex en Supabase vivo y codigo local. Este bloque
+prepara el flujo futuro de agendamiento via WhatsApp Business: el paciente debe
+elegir si paga out-of-pocket o por aseguradora; si elige aseguradora y la
+pre-autorizacion se rechaza, la cita se cancela y no puede avanzar al servicio.
+
+#### Supabase aplicado
+
+- Migraciones aplicadas en Supabase:
+  - `clinic_payment_and_financial_metrics`
+  - `clinic_financial_pipeline_fix`
+  - `clinic_create_appointment_created_by_fix`
+- Migraciones versionadas localmente:
+  - `supabase/migrations/20260529183000_clinic_payment_and_financial_metrics.sql`
+  - `supabase/migrations/20260529185000_clinic_financial_pipeline_fix.sql`
+  - `supabase/migrations/20260529190000_clinic_create_appointment_created_by_fix.sql`
+- `clinic_services` ahora tiene `list_price`, `insurer_price`,
+  `cost_basis` y `payment_required`.
+- `service_appointments` ahora tiene modelo/metodo/estado de pago, montos
+  cotizados/cobrados y razon/fecha de cancelacion.
+- Nueva RPC `public.create_clinic_appointment(...)`:
+  - Crea la cita desde SQL/RPC con modelo de pago.
+  - Si `payment_model = 'aseguradora'`, crea tambien `pre_auth_requests` en `pending`.
+  - Si `payment_model = 'out_of_pocket'`, deja `pre_auth_status = 'not_required'` y `payment_method = 'efectivo'` por default.
+  - Registra auditoria en `clinic_audit_log`.
+- RPCs endurecidas:
+  - `public.update_clinic_appointment_status(...)` cancela automaticamente si la cita es por aseguradora y la pre-auth esta `rejected`; tambien bloquea `in_progress`/`completed` si sigue `pending`/`in_review`.
+  - `public.update_clinic_preauth_status(...)` sincroniza `service_appointments.pre_auth_status` y cancela citas `scheduled`/`checked_in` cuando la pre-auth cambia a `rejected` o `expired`.
+- Vistas economicas creadas:
+  - `clinic_financial_metrics_monthly`
+  - `clinic_revenue_by_payment_method_monthly`
+  - `clinic_service_financials_monthly`
+- Las vistas usan `security_invoker = true`, revocan acceso a `anon` y otorgan
+  solo `select` a `authenticated`.
+
+#### Codigo local actualizado
+
+| Archivo | Cambio |
+|---|---|
+| `src/types.ts` | Agrega tipos de pago clinic y metricas economicas: `ClinicPaymentModel`, `ClinicPaymentMethod`, `ClinicPaymentStatus`, `ClinicFinancialMonthly`, `ClinicRevenueByPaymentMethod`, `ClinicServiceFinancialMonthly`. |
+| `src/api/clinic.ts` | Agrega `createClinicAppointment`, `getClinicFinancialMetrics`, `getClinicRevenueByPaymentMethod` y `getClinicServiceFinancials`. |
+
+#### Validacion realizada
+
+- `npx.cmd tsc -b` paso sin errores.
+- Prueba transaccional con rollback:
+  - Cita out-of-pocket queda con `payment_model = out_of_pocket`, `payment_method = efectivo`, `pre_auth_status = not_required`.
+  - Cita por aseguradora crea pre-auth; al rechazarla, la cita se cancela y queda `payment_status = preauth_rechazada`.
+  - Cita por aseguradora con pre-auth `pending` no puede avanzar a `in_progress`.
+- Las vistas economicas devolvieron desglose por mes, metodo de pago y servicio.
+- Vista mensual verificada en Supabase para mayo 2026: 12 servicios completados,
+  `collected_amount = 85700.00`, `out_of_pocket_collected = 2900.00`,
+  `insurer_collected = 82800.00`, `estimated_margin = 29900.00`.
+- `npm.cmd run build` no paso dentro de este entorno por el error conocido de
+  Vite/esbuild: `Cannot read directory "../..": Acceso denegado` y no poder
+  resolver `vite.config.ts`. El fallo ocurre despues de `tsc -b`.
+
+#### Handoff para Claude
+
+Claude debe usar este contrato para UI:
+
+- Al crear/agendar cita manual en UI, usar `createClinicAppointment`.
+- Mostrar claramente pago out-of-pocket/efectivo vs pago por aseguradora/pre-auth.
+- Mostrar pre-auth pendiente, aprobada, rechazada y citas canceladas por rechazo.
+- En Rendimiento, usar:
+  - `getClinicFinancialMetrics(clinicId, months)`
+  - `getClinicRevenueByPaymentMethod(clinicId, month)`
+  - `getClinicServiceFinancials(clinicId, month)`
+
 ### Archivos creados
 
 | Archivo | Descripción |
@@ -425,3 +853,59 @@ El bot Concierge va a tener acceso de escritura a `service_appointments` y `clin
 
 Documentar en el hardening de Codex (sección de seguridad del módulo Clínicas Ambulatorias).
 - No requiere build.
+
+---
+
+## ✅ Sección Pacientes — UI del módulo Clínicas Ambulatorias — mayo 2026
+
+**Estado:** Implementado — lista y expediente de pacientes ambulatorios en `ClinicDesktop`.
+**Motor:** M1 · **Costo real:** $0 · **IA requerida:** No
+
+### Contexto
+
+Se agrego la seccion "Pacientes" al modulo Clinicas Ambulatorias. Toda la interfaz consume exclusivamente tablas del modulo clinic. No se consulta `public.patients` desde ninguna ruta nueva. El backend fue implementado por Codex en el bloque "Contrato backend/API para Pacientes Ambulatorios".
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/components/ClinicDesktop.tsx` | Imports de API y tipos extendidos. Constantes `TREATMENT_STATUS_LABEL` y `TREATMENT_STATUS_COLOR`. Componentes `ClinicPatientList` y `ClinicPatientDetail`. Tipo `ClinicScreen` + `'pacientes'`. Estado `selectedPatientId` y funcion `goPatient`. Item `pacientes` en `navItems`. Routing de pantalla `pacientes`. Prop `goPatient` opcional en `Agenda`, `PreAuth`, `Resultados`, `Bandeja`. |
+
+### Funcionalidades implementadas
+
+**Lista de pacientes (`ClinicPatientList`):**
+- Carga desde `listClinicPatients(clinicId)` via `clinic_patient_operational_summary`.
+- Busqueda por nombre, telefono, aseguradora, poliza, ID.
+- Filtros: Todos/Activos/Inactivos, Recurrentes, estado operativo.
+- Tabla compacta: Paciente, Aseguradora/Poliza, Estado operativo, Ultima visita, Proxima cita, Visitas + Recurrente, Alertas (resultado critico, preauth pendiente, mensajes abiertos).
+- Click en fila abre expediente.
+
+**Expediente ambulatorio (`ClinicPatientDetail`):**
+- Carga paralela: `getClinicPatientSummary` + `listClinicPatientAppointments` + `listClinicPatientPreAuthRequests` + `listClinicPatientResults` + `listClinicPatientConversations`.
+- Header brand con nombre, datos de contacto, aseguradora, poliza, ID, referencia externa.
+- 6 tarjetas resumen: Recurrente/Primera vez, Ultima visita, Proxima cita, Estado tratamiento, Pre-auth, Resultado critico.
+- 6 tabs: Resumen, Citas, Pre-autorizacion, Resultados, Conversaciones, Historial.
+- Historial como timeline vertical cargada lazily via `listClinicPatientTimeline`.
+
+**Navegacion cruzada:**
+- Agenda, Pre-auth, Resultados, Bandeja: nombre del paciente clickeable → expediente.
+- Topbar: breadcrumb "Pacientes / Expediente" con link de regreso.
+- Cambio de seccion en sidebar limpia `selectedPatientId`.
+
+### Validacion realizada
+
+- `npx.cmd tsc -b` paso sin errores.
+- `npx.cmd vite build` paso limpio.
+- No se importa ni consulta `public.patients` desde componentes nuevos.
+- `patient_id` sigue siendo `text` en todas las consultas.
+
+### Limitaciones conocidas
+
+- 9 pacientes demo tienen nombres placeholder; se depuran cuando exista flujo de alta real.
+- Tab "Conversaciones" del expediente es solo lectura; para responder hay que ir a Bandeja.
+- No existe formulario de alta de nuevo paciente desde la UI.
+- Timeline puede quedar vacia si `clinic_audit_log` no tiene eventos.
+
+### Proximo mini plan recomendado
+
+Modal de alta de nuevo paciente ambulatorio: formulario con datos del paciente, aseguradora y poliza, usando `INSERT` sobre `clinic_patients` con RLS de staff.
