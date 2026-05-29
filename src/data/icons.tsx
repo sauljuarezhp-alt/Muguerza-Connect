@@ -38,4 +38,7 @@ export const Ico: Record<string, ReactNode> = {
   arrowDown: <svg className="mc-ico" viewBox="0 0 24 24" style={{width:11,height:11}}><path d="m6 9 6 6 6-6"/></svg>,
   dash: <svg className="mc-ico" viewBox="0 0 24 24" style={{width:11,height:11}}><path d="M5 12h14"/></svg>,
   chart: <svg className="mc-ico lg" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>,
+  grid: <svg className="mc-ico lg" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
+  activity: <svg className="mc-ico lg" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
+  bot: <svg className="mc-ico" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg>,
 };
