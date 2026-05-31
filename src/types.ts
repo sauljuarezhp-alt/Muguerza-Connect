@@ -122,6 +122,23 @@ export interface ClinicStaff {
 
 export type AppointmentStatus = 'scheduled' | 'checked_in' | 'in_progress' | 'completed' | 'cancelled' | 'escalated' | 'no_show';
 export type PreAuthStatus = 'not_required' | 'pending' | 'in_review' | 'approved' | 'rejected';
+export type ClinicPaymentModel = 'out_of_pocket' | 'insurer';
+export type ClinicPaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'cortesia';
+export type ClinicPaymentStatus = 'pendiente' | 'preauth_pendiente' | 'preauth_aprobada' | 'preauth_rechazada' | 'pagado' | 'cancelado' | 'cortesia' | 'reembolsado';
+
+export interface ClinicService {
+  id: string;
+  clinic_id: string;
+  service_type: string;
+  name: string;
+  duration_min: number;
+  active: boolean;
+  list_price: number;
+  insurer_price?: number;
+  cost_basis?: number;
+  payment_required: boolean;
+  created_at: string;
+}
 
 export interface ServiceAppointment {
   id: string;
@@ -136,10 +153,59 @@ export interface ServiceAppointment {
   notes?: string;
   created_at: string;
   updated_at: string;
+  payment_model: ClinicPaymentModel;
+  payment_method: ClinicPaymentMethod;
+  payment_status: ClinicPaymentStatus;
+  quoted_price: number;
+  patient_responsibility_amount: number;
+  insurer_expected_amount: number;
+  amount_collected: number;
+  payment_confirmed_at?: string;
+  cancellation_reason?: string;
+  cancelled_at?: string;
   // joined
   patient_name?: string;
   service_name?: string;
   service_type?: string;
+}
+
+export interface ClinicFinancialMonthly {
+  clinic_id: string;
+  month: string;
+  booked_services: number;
+  completed_services: number;
+  cancelled_services: number;
+  preauth_rejected_cancelled: number;
+  unique_patients: number;
+  booked_gross_amount: number;
+  collected_amount: number;
+  out_of_pocket_collected: number;
+  insurer_collected: number;
+  insurer_pipeline_amount: number;
+  estimated_margin: number;
+}
+
+export interface ClinicRevenueByPaymentMethod {
+  clinic_id: string;
+  month: string;
+  payment_model: ClinicPaymentModel;
+  payment_method: ClinicPaymentMethod | null;
+  payment_status: ClinicPaymentStatus;
+  services: number;
+  collected_amount: number;
+  booked_amount: number;
+}
+
+export interface ClinicServiceFinancialMonthly {
+  clinic_id: string;
+  month: string;
+  service_type: string;
+  service_name: string;
+  booked_services: number;
+  completed_services: number;
+  collected_amount: number;
+  avg_ticket: number;
+  estimated_margin: number;
 }
 
 export interface PreAuthRequest {
@@ -259,4 +325,87 @@ export interface ClinicalEscalation {
   notes?: string;
   // joined
   patient_name?: string;
+}
+
+// ── Pacientes Ambulatorio ───────────────────────────────────────────────────
+
+export interface ClinicPatient {
+  id: string;
+  clinic_id: string;
+  full_name: string;
+  phone?: string;
+  email?: string;
+  sex?: 'F' | 'M' | 'O' | 'unknown';
+  date_of_birth?: string;
+  external_patient_ref?: string;
+  insurer?: string;
+  policy_number?: string;
+  emergency_contact: Record<string, unknown>;
+  notes?: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ClinicPatientTreatmentStatus =
+  | 'no_activity'
+  | 'scheduled'
+  | 'checked_in'
+  | 'in_progress'
+  | 'completed'
+  | 'follow_up_required'
+  | 'escalated'
+  | 'cancelled';
+
+export interface ClinicPatientListItem extends ClinicPatient {
+  is_recurrent: boolean;
+  visits_total: number;
+  completed_visits: number;
+  last_visit_at?: string;
+  next_visit_at?: string;
+  current_status: ClinicPatientTreatmentStatus;
+  current_service_name?: string;
+  current_service_type?: string;
+  pending_preauth_count: number;
+  critical_results_count: number;
+  open_conversation_count: number;
+  active_assignment_count: number;
+}
+
+export interface ClinicPatientSummary {
+  patient: ClinicPatient;
+  is_recurrent: boolean;
+  visits_total: number;
+  completed_visits: number;
+  cancelled_or_no_show_count: number;
+  last_visit?: ServiceAppointment;
+  next_visit?: ServiceAppointment;
+  current_appointment?: ServiceAppointment;
+  current_status: ClinicPatientTreatmentStatus;
+  pending_preauth: PreAuthRequest[];
+  latest_preauth?: PreAuthRequest;
+  critical_results: ServiceResult[];
+  latest_result?: ServiceResult;
+  open_conversations: ClinicConversation[];
+  active_assignments: ClinicResourceAssignment[];
+}
+
+export type ClinicPatientTimelineEventType =
+  | 'appointment'
+  | 'preauth'
+  | 'result'
+  | 'conversation'
+  | 'resource'
+  | 'audit';
+
+export interface ClinicPatientTimelineEvent {
+  id: string;
+  type: ClinicPatientTimelineEventType;
+  occurred_at: string;
+  title: string;
+  description?: string;
+  severity?: 'neutral' | 'info' | 'warning' | 'critical' | 'success';
+  source_table: string;
+  source_id: string;
+  metadata?: Record<string, unknown>;
 }

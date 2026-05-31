@@ -15,3 +15,4 @@ export * from './preconsulta';
 export * from './metrics';
 export * from './consultationTypes';
 export * from './precita';
+export * from './clinic';
