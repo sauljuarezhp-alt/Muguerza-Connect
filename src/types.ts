@@ -122,8 +122,8 @@ export interface ClinicStaff {
 
 export type AppointmentStatus = 'scheduled' | 'checked_in' | 'in_progress' | 'completed' | 'cancelled' | 'escalated' | 'no_show';
 export type PreAuthStatus = 'not_required' | 'pending' | 'in_review' | 'approved' | 'rejected';
-export type ClinicPaymentModel = 'out_of_pocket' | 'insurer';
-export type ClinicPaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'cortesia';
+export type ClinicPaymentModel = 'out_of_pocket' | 'aseguradora';
+export type ClinicPaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'aseguradora' | 'cortesia' | 'pendiente';
 export type ClinicPaymentStatus = 'pendiente' | 'preauth_pendiente' | 'preauth_aprobada' | 'preauth_rechazada' | 'pagado' | 'cancelado' | 'cortesia' | 'reembolsado';
 
 export interface ClinicService {

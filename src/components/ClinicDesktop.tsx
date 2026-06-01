@@ -19,6 +19,7 @@ import {
   markConversationRead,
   listResources,
   listActiveAssignments,
+  manualAssignResource,
   freeResource,
   listClinicServices,
   createClinicAppointment,
@@ -213,7 +214,7 @@ function fmtDate(iso: string) {
 // ── Panel del día ───────────────────────────────────────────────────────────
 
 function PanelHoy({
-  todayAppts, escalations, preauth, resources, assignments, brand, tokens, goAppt, goInfra,
+  todayAppts, escalations, preauth, resources, assignments, brand, tokens, goAppt, goAgenda, goPreauth, goInfra,
 }: {
   todayAppts: ServiceAppointment[];
   escalations: ClinicalEscalation[];
@@ -223,6 +224,8 @@ function PanelHoy({
   brand: string;
   tokens: ReturnType<typeof useTheme>['tokens'];
   goAppt: (id: string) => void;
+  goAgenda: (status?: AppointmentStatus) => void;
+  goPreauth: () => void;
   goInfra: () => void;
 }) {
   const completed = todayAppts.filter(a => a.status === 'completed').length;
@@ -232,12 +235,12 @@ function PanelHoy({
   const occupancy = resources.length > 0 ? Math.round((assignments.length / resources.length) * 100) : 0;
 
   const stats = [
-    { label: 'Citas hoy', value: todayAppts.length, color: brand },
-    { label: 'En progreso', value: inProgress, color: '#E08900' },
-    { label: 'Check-in', value: checkedIn, color: '#2D6BE4' },
-    { label: 'Ocupación', value: `${occupancy}%`, color: occupancy >= 80 ? '#D93A3A' : occupancy >= 50 ? '#E08900' : '#10897B' },
-    { label: 'Pre-auth pendiente', value: pendingAuth, color: '#D93A3A' },
-    { label: 'Escalamientos activos', value: escalations.length, color: '#D93A3A' },
+    { label: 'Citas hoy', value: todayAppts.length, color: brand, onClick: () => goAgenda() },
+    { label: 'En progreso', value: inProgress, color: '#E08900', onClick: () => goAgenda('in_progress') },
+    { label: 'Check-in', value: checkedIn, color: '#2D6BE4', onClick: () => goAgenda('checked_in') },
+    { label: 'Ocupación', value: `${occupancy}%`, color: occupancy >= 80 ? '#D93A3A' : occupancy >= 50 ? '#E08900' : '#10897B', onClick: goInfra },
+    { label: 'Pre-auth pendiente', value: pendingAuth, color: '#D93A3A', onClick: goPreauth },
+    { label: 'Escalamientos activos', value: escalations.length, color: '#D93A3A', onClick: undefined },
   ];
 
   const upcoming = todayAppts.filter(a => a.status === 'scheduled' || a.status === 'checked_in' || a.status === 'in_progress');
@@ -260,7 +263,11 @@ function PanelHoy({
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
         {stats.map(s => (
-          <div key={s.label} style={statCard(tokens, brand)}>
+          <div
+            key={s.label}
+            onClick={s.onClick}
+            style={{ ...statCard(tokens, brand), cursor: s.onClick ? 'pointer' : 'default' }}
+          >
             <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 600, fontSize: 28, color: s.color, lineHeight: 1 }}>{s.value}</div>
             <div style={{ fontSize: 11.5, color: tokens.textSecondary, lineHeight: 1.3 }}>{s.label}</div>
           </div>
@@ -360,7 +367,7 @@ function NewClinicAppointmentModal({
   const [patientId, setPatientId] = useState('');
   const [serviceId, setServiceId] = useState(services[0]?.id ?? '');
   const [scheduledAt, setScheduledAt] = useState('');
-  const [paymentModel, setPaymentModel] = useState<'out_of_pocket' | 'insurer'>('out_of_pocket');
+  const [paymentModel, setPaymentModel] = useState<'out_of_pocket' | 'aseguradora'>('out_of_pocket');
   const [paymentMethod, setPaymentMethod] = useState<'efectivo' | 'tarjeta' | 'transferencia' | 'cortesia'>('efectivo');
   const [insurer, setInsurer] = useState('');
   const [quotedPrice, setQuotedPrice] = useState<number>(0);
@@ -372,7 +379,7 @@ function NewClinicAppointmentModal({
 
   useEffect(() => {
     if (!selectedService) return;
-    setQuotedPrice(paymentModel === 'insurer' ? (selectedService.insurer_price ?? selectedService.list_price) : selectedService.list_price);
+    setQuotedPrice(paymentModel === 'aseguradora' ? (selectedService.insurer_price ?? selectedService.list_price) : selectedService.list_price);
   }, [serviceId, paymentModel]);
 
   const inputSt: React.CSSProperties = {
@@ -400,7 +407,7 @@ function NewClinicAppointmentModal({
       scheduledAt: new Date(scheduledAt).toISOString(),
       paymentModel,
       paymentMethod: paymentModel === 'out_of_pocket' ? paymentMethod : undefined,
-      insurer: paymentModel === 'insurer' ? insurer : undefined,
+      insurer: paymentModel === 'aseguradora' ? insurer : undefined,
       notes: notes.trim() || undefined,
       quotedPrice,
     });
@@ -440,7 +447,7 @@ function NewClinicAppointmentModal({
           <div>
             <div style={labelSt}>Modelo de pago</div>
             <div style={{ display: 'flex', gap: 12 }}>
-              {(['out_of_pocket', 'insurer'] as const).map(m => (
+              {(['out_of_pocket', 'aseguradora'] as const).map(m => (
                 <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: tokens.text }}>
                   <input type="radio" checked={paymentModel === m} onChange={() => setPaymentModel(m)} style={{ accentColor: brand }} />
                   {m === 'out_of_pocket' ? 'Out-of-pocket' : 'Aseguradora'}
@@ -461,7 +468,7 @@ function NewClinicAppointmentModal({
               </div>
             </div>
           )}
-          {paymentModel === 'insurer' && (
+          {paymentModel === 'aseguradora' && (
             <div>
               <div style={labelSt}>Aseguradora *</div>
               <input value={insurer} onChange={e => setInsurer(e.target.value)} placeholder="Nombre de la aseguradora" style={inputSt} />
@@ -475,8 +482,8 @@ function NewClinicAppointmentModal({
             <div style={labelSt}>Notas (opcional)</div>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inputSt, resize: 'vertical' as const }} />
           </div>
-          <div style={{ padding: '10px 12px', borderRadius: 8, background: paymentModel === 'insurer' ? '#2D6BE418' : '#10897B12', border: `1px solid ${paymentModel === 'insurer' ? '#2D6BE4' : '#10897B'}40`, fontSize: 12, color: paymentModel === 'insurer' ? '#2D6BE4' : '#10897B' }}>
-            {paymentModel === 'insurer'
+          <div style={{ padding: '10px 12px', borderRadius: 8, background: paymentModel === 'aseguradora' ? '#2D6BE418' : '#10897B12', border: `1px solid ${paymentModel === 'aseguradora' ? '#2D6BE4' : '#10897B'}40`, fontSize: 12, color: paymentModel === 'aseguradora' ? '#2D6BE4' : '#10897B' }}>
+            {paymentModel === 'aseguradora'
               ? 'Se creará solicitud de pre-autorización. La cita no podrá iniciar hasta que sea aprobada.'
               : 'No requiere pre-autorización.'}
           </div>
@@ -496,7 +503,7 @@ function NewClinicAppointmentModal({
 // ── Agenda completa ─────────────────────────────────────────────────────────
 
 function Agenda({
-  appointments, assignments, brand, tokens, onStatusChange, onNewAppt, goPatient,
+  appointments, assignments, brand, tokens, onStatusChange, onNewAppt, goPatient, initialStatusFilter,
 }: {
   appointments: ServiceAppointment[];
   assignments: ClinicResourceAssignment[];
@@ -505,11 +512,16 @@ function Agenda({
   onStatusChange: (id: string, status: AppointmentStatus) => Promise<boolean>;
   onNewAppt: () => void;
   goPatient?: (patientId: string) => void;
+  initialStatusFilter?: AppointmentStatus | 'all';
 }) {
   const assignmentByAppt = new Map(assignments.map(a => [a.appointment_id, a]));
   const [filterStatus, setFilterStatus] = useState<AppointmentStatus | 'all'>('all');
   const [filterType, setFilterType] = useState<string>('all');
   const [blockedMsg, setBlockedMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFilterStatus(initialStatusFilter ?? 'all');
+  }, [initialStatusFilter]);
 
   const filtered = appointments.filter(a => {
     if (filterStatus !== 'all' && a.status !== filterStatus) return false;
@@ -877,11 +889,14 @@ function Aseguradoras({
 // ── Rendimiento financiero ────────────────────────────────────────────────────
 
 function Rendimiento({
-  clinicId, brand, tokens,
+  clinicId, appointments, brand, tokens, goAgenda, goPreauth,
 }: {
   clinicId: string;
+  appointments: ServiceAppointment[];
   brand: string;
   tokens: ReturnType<typeof useTheme>['tokens'];
+  goAgenda: (status?: AppointmentStatus) => void;
+  goPreauth: () => void;
 }) {
   const currentMonth = new Date().toISOString().slice(0, 7) + '-01';
   const [metrics, setMetrics] = useState<ClinicFinancialMonthly[]>([]);
@@ -913,13 +928,35 @@ function Rendimiento({
     estimated_margin: 0, insurer_pipeline_amount: 0, preauth_rejected_cancelled: 0,
   };
 
-  const kpis = [
-    { label: 'Ingresos cobrados', value: fmt$(currentMetrics.collected_amount), color: brand },
-    { label: 'Completados', value: currentMetrics.completed_services, color: '#10897B' },
-    { label: 'Pacientes únicos', value: currentMetrics.unique_patients, color: '#2D6BE4' },
-    { label: 'Margen estimado', value: fmt$(currentMetrics.estimated_margin), color: '#10897B' },
-    { label: 'Pipeline aseguradoras', value: fmt$(currentMetrics.insurer_pipeline_amount), color: '#E08900' },
-    { label: 'Canceladas por pre-auth', value: currentMetrics.preauth_rejected_cancelled, color: '#D93A3A' },
+  const total = appointments.length;
+  const completed = appointments.filter(a => a.status === 'completed').length;
+  const cancelled = appointments.filter(a => a.status === 'cancelled').length;
+  const noShow = appointments.filter(a => a.status === 'no_show').length;
+  const escalated = appointments.filter(a => a.status === 'escalated').length;
+  const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  const byType: Record<string, number> = {};
+  for (const a of appointments) {
+    const t = a.service_type ?? 'unknown';
+    byType[t] = (byType[t] ?? 0) + 1;
+  }
+
+  const financialKpis = [
+    { label: 'Ingresos cobrados', value: fmt$(currentMetrics.collected_amount), color: brand, onClick: () => goAgenda('completed') },
+    { label: 'Completados', value: currentMetrics.completed_services, color: '#10897B', onClick: () => goAgenda('completed') },
+    { label: 'Pacientes únicos', value: currentMetrics.unique_patients, color: '#2D6BE4', onClick: () => goAgenda() },
+    { label: 'Margen estimado', value: fmt$(currentMetrics.estimated_margin), color: '#10897B', onClick: () => goAgenda('completed') },
+    { label: 'Pipeline aseguradoras', value: fmt$(currentMetrics.insurer_pipeline_amount), color: '#E08900', onClick: goPreauth },
+    { label: 'Canceladas por pre-auth', value: currentMetrics.preauth_rejected_cancelled, color: '#D93A3A', onClick: () => goAgenda('cancelled') },
+  ];
+
+  const operationalKpis = [
+    { label: 'Citas totales', value: total, color: brand, onClick: () => goAgenda() },
+    { label: 'Completadas', value: completed, color: '#10897B', onClick: () => goAgenda('completed') },
+    { label: 'Canceladas', value: cancelled, color: '#8E8E93', onClick: () => goAgenda('cancelled') },
+    { label: 'No se presentaron', value: noShow, color: '#8E8E93', onClick: () => goAgenda('no_show') },
+    { label: 'Escalamientos', value: escalated, color: '#D93A3A', onClick: () => goAgenda('escalated') },
+    { label: 'Tasa de completación', value: `${completionRate}%`, color: completionRate >= 80 ? '#10897B' : completionRate >= 60 ? '#E08900' : '#D93A3A', onClick: () => goAgenda('completed') },
   ];
 
   const chartData = metrics.slice(-periodMonths).map(m => {
@@ -932,14 +969,45 @@ function Rendimiento({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* KPIs */}
+      <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 13.5, color: tokens.text }}>Finanzas del mes</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
-        {kpis.map(k => (
-          <div key={k.label} style={statCard(tokens, brand)}>
+        {financialKpis.map(k => (
+          <div key={k.label} onClick={k.onClick} style={{ ...statCard(tokens, brand), cursor: 'pointer' }}>
             <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 600, fontSize: 22, color: k.color, lineHeight: 1 }}>{k.value}</div>
             <div style={{ fontSize: 11.5, color: tokens.textSecondary, lineHeight: 1.3 }}>{k.label}</div>
           </div>
         ))}
+      </div>
+
+      <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 13.5, color: tokens.text }}>Operación de agenda</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
+        {operationalKpis.map(k => (
+          <div key={k.label} onClick={k.onClick} style={{ ...statCard(tokens, brand), cursor: 'pointer' }}>
+            <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 600, fontSize: 22, color: k.color, lineHeight: 1 }}>{k.value}</div>
+            <div style={{ fontSize: 11.5, color: tokens.textSecondary, lineHeight: 1.3 }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={card(tokens)}>
+        <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 13.5, color: tokens.text, marginBottom: 14 }}>Citas por tipo de servicio</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([type, count]) => {
+            const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+            return (
+              <div key={type} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 48px', alignItems: 'center', gap: 12 }}>
+                <div style={{ fontSize: 12.5, color: tokens.text, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500 }}>{SERVICE_TYPE_LABEL[type] ?? type}</div>
+                <div style={{ height: 8, borderRadius: 999, background: tokens.borderLight, overflow: 'hidden' }}>
+                  <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: brand }} />
+                </div>
+                <div style={{ fontSize: 12, color: tokens.textSecondary, textAlign: 'right', fontFamily: 'Roboto Mono, monospace' }}>{count}</div>
+              </div>
+            );
+          })}
+          {Object.keys(byType).length === 0 && (
+            <div style={{ textAlign: 'center', padding: '24px 0', fontSize: 13, color: tokens.textSecondary }}>Sin datos de rendimiento operativo</div>
+          )}
+        </div>
       </div>
 
       {noFinancialData ? (
@@ -1232,10 +1300,9 @@ function Bandeja({
               const active = c.id === selectedId;
               return (
                 <div key={c.id} onClick={() => setSelectedId(c.id)}
-                  style={{ display: 'grid', gridTemplateColumns: '10px 1fr auto', gap: 10, padding: '11px 12px', borderBottom: i < filtered.length - 1 ? `1px solid ${tokens.borderLight}` : 'none', cursor: 'pointer', background: active ? brand + '12' : tokens.surface, alignItems: 'center' }}
+                  style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, padding: '11px 12px', borderBottom: i < filtered.length - 1 ? `1px solid ${tokens.borderLight}` : 'none', cursor: 'pointer', background: active ? brand + '12' : tokens.surface, alignItems: 'center' }}
                   onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = tokens.surfaceAlt; }}
                   onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = tokens.surface; }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 99, background: CONV_STATUS_COLOR[c.status], display: 'block' }} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 13.5, color: active ? brand : tokens.text, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.patient_name}</div>
                     <div style={{ fontSize: 11, color: tokens.textSecondary, marginTop: 2, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1378,14 +1445,16 @@ function fmtRemaining(min: number | null): string {
 }
 
 function Infraestructura({
-  resources, assignments, brand, tokens, onFree,
+  resources, assignments, brand, tokens, onMove, onComplete,
 }: {
   resources: ClinicResource[];
   assignments: ClinicResourceAssignment[];
   brand: string;
   tokens: ReturnType<typeof useTheme>['tokens'];
-  onFree: (assignmentId: string) => void;
+  onMove: (assignment: ClinicResourceAssignment, resource: ClinicResource) => void;
+  onComplete: (assignment: ClinicResourceAssignment) => void;
 }) {
+  const [dragging, setDragging] = useState<ClinicResourceAssignment | null>(null);
   const byType: Record<ClinicResourceType, ClinicResource[]> = {
     infusion_chair: [], lab_station: [], imaging_room: [], surgery_room: [], consult_room: [],
   };
@@ -1428,6 +1497,7 @@ function Infraestructura({
       {types.map(type => {
         const list = byType[type];
         if (list.length === 0) return null;
+        const canDropInType = dragging?.resource_type === type;
         return (
           <div key={type} style={card(tokens)}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
@@ -1439,26 +1509,48 @@ function Infraestructura({
                 {list.filter(r => assignmentByResource.has(r.id)).length} de {list.length} ocupadas
               </span>
             </div>
+            {canDropInType && (
+              <div style={{ marginBottom: 12, padding: '8px 10px', borderRadius: 8, background: '#10897B12', border: '1px solid #10897B40', color: '#10897B', fontSize: 12, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500 }}>
+                Arrastra al paciente a un recurso libre de {RESOURCE_TYPE_LABEL[type].toLowerCase()}.
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10 }}>
               {list.map(r => {
                 const a = assignmentByResource.get(r.id);
                 const occupied = !!a;
                 const remaining = occupied ? minutesUntil(a.expected_end_at) : null;
                 const overdue = remaining !== null && remaining < 0;
-                const bg = occupied ? (overdue ? 'rgba(217,58,58,0.08)' : brand + '0F') : tokens.surfaceAlt;
-                const borderColor = occupied ? (overdue ? '#D93A3A' : brand) : tokens.border;
+                const canDrop = !!dragging && !occupied && dragging.resource_type === r.resource_type;
+                const bg = canDrop ? '#10897B12' : occupied ? (overdue ? 'rgba(217,58,58,0.08)' : brand + '0F') : tokens.surfaceAlt;
+                const borderColor = canDrop ? '#10897B' : occupied ? (overdue ? '#D93A3A' : brand) : tokens.border;
 
                 return (
                   <div key={r.id}
-                    style={{ background: bg, border: `1px solid ${borderColor}`, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 110 }}>
+                    onDragOver={e => {
+                      if (canDrop) e.preventDefault();
+                    }}
+                    onDrop={e => {
+                      e.preventDefault();
+                      if (dragging && canDrop) onMove(dragging, r);
+                      setDragging(null);
+                    }}
+                    style={{ background: bg, border: `1px solid ${borderColor}`, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 110, transition: 'border-color 0.12s, background 0.12s' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 13, color: tokens.text }}>{r.name}</div>
                       <span style={{ ...badge(occupied ? (overdue ? '#D93A3A' : brand) : '#10897B'), fontSize: 10 }}>
-                        {occupied ? (overdue ? 'Sobretiempo' : 'Ocupada') : 'Libre'}
+                        {canDrop ? 'Soltar aquí' : occupied ? (overdue ? 'Sobretiempo' : 'Ocupada') : 'Libre'}
                       </span>
                     </div>
                     {occupied ? (
-                      <>
+                      <div
+                        draggable
+                        onDragStart={e => {
+                          setDragging(a);
+                          e.dataTransfer.effectAllowed = 'move';
+                        }}
+                        onDragEnd={() => setDragging(null)}
+                        style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, opacity: dragging?.id === a.id ? 0.5 : 1, cursor: 'grab' }}
+                      >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <div style={{ width: 28, height: 28, borderRadius: 999, background: brand, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, flexShrink: 0 }}>
                             {a.patient_id.slice(-2)}
@@ -1472,14 +1564,18 @@ function Infraestructura({
                           <div style={{ fontSize: 11, fontFamily: 'Roboto Mono, monospace', color: overdue ? '#D93A3A' : tokens.textSecondary }}>
                             {overdue ? 'Excede ' : 'Termina en '}{fmtRemaining(remaining)}
                           </div>
-                          <button onClick={() => onFree(a.id)}
-                            style={{ padding: '3px 9px', borderRadius: 6, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.textSecondary, fontSize: 10.5, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, cursor: 'pointer' }}>
-                            Liberar
-                          </button>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={() => onComplete(a)}
+                              style={{ padding: '3px 9px', borderRadius: 6, border: '1px solid #10897B', background: '#10897B', color: '#fff', fontSize: 10.5, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, cursor: 'pointer' }}>
+                              Terminar
+                            </button>
+                          </div>
                         </div>
-                      </>
+                      </div>
                     ) : (
-                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: tokens.textTertiary, fontSize: 12 }}>Disponible</div>
+                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: canDrop ? '#10897B' : tokens.textTertiary, fontSize: 12, fontFamily: canDrop ? 'Franklin Gothic, Libre Franklin, sans-serif' : undefined, fontWeight: canDrop ? 500 : undefined }}>
+                        {canDrop ? '↓ Mover aquí' : 'Disponible'}
+                      </div>
                     )}
                   </div>
                 );
@@ -2018,14 +2114,24 @@ export function ClinicDesktop() {
   const [showNewAppt, setShowNewAppt] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedApptId, setSelectedApptId] = useState<string | null>(null);
+  const [agendaStatusFilter, setAgendaStatusFilter] = useState<AppointmentStatus | 'all'>('all');
+
+  function goAgenda(status: AppointmentStatus | 'all' = 'all') {
+    setAgendaStatusFilter(status);
+    setSelectedPatientId(null);
+    setScreen('agenda');
+  }
 
   useEffect(() => {
+    let activeClinicId: string | null = null;
+
     async function load() {
       const s = await getCurrentClinicStaff();
       setStaff(s);
       if (!s) { setLoading(false); return; }
 
       const clinicId = s.clinic_id;
+      activeClinicId = clinicId;
       const [today, all, pa, res, esc, conv, rsc, asg, svcs] = await Promise.all([
         listTodayAppointments(clinicId),
         listAllAppointments(clinicId),
@@ -2053,31 +2159,69 @@ export function ClinicDesktop() {
     const channel = supabase
       .channel('clinic-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_appointments' }, () => {
-        if (staff?.clinic_id) {
-          listTodayAppointments(staff.clinic_id).then(setTodayAppts);
-          listAllAppointments(staff.clinic_id).then(setAllAppts);
-          listActiveAssignments(staff.clinic_id).then(setAssignments);
+        if (activeClinicId) {
+          listTodayAppointments(activeClinicId).then(setTodayAppts);
+          listAllAppointments(activeClinicId).then(setAllAppts);
+          listActiveAssignments(activeClinicId).then(setAssignments);
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'clinic_resource_assignments' }, () => {
-        if (staff?.clinic_id) listActiveAssignments(staff.clinic_id).then(setAssignments);
+        if (activeClinicId) listActiveAssignments(activeClinicId).then(setAssignments);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pre_auth_requests' }, () => {
-        if (staff?.clinic_id) listPreAuthRequests(staff.clinic_id).then(setPreauth);
+        if (activeClinicId) listPreAuthRequests(activeClinicId).then(setPreauth);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_results' }, () => {
-        if (staff?.clinic_id) listServiceResults(staff.clinic_id).then(setResults);
+        if (activeClinicId) listServiceResults(activeClinicId).then(setResults);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'clinical_escalations' }, () => {
-        if (staff?.clinic_id) listActiveEscalations(staff.clinic_id).then(setEscalations);
+        if (activeClinicId) listActiveEscalations(activeClinicId).then(setEscalations);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'clinic_conversations' }, () => {
-        if (staff?.clinic_id) listConversations(staff.clinic_id).then(setConversations);
+        if (activeClinicId) listConversations(activeClinicId).then(setConversations);
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, []);
+
+  useEffect(() => {
+    if (!staff?.clinic_id) return;
+
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let cancelled = false;
+
+    const refreshDailyAgenda = async () => {
+      const clinicId = staff.clinic_id;
+      const [today, all, pa, asg] = await Promise.all([
+        listTodayAppointments(clinicId),
+        listAllAppointments(clinicId),
+        listPreAuthRequests(clinicId),
+        listActiveAssignments(clinicId),
+      ]);
+      if (cancelled) return;
+      setTodayAppts(today);
+      setAllAppts(all);
+      setPreauth(pa);
+      setAssignments(asg);
+    };
+
+    const scheduleNextLocalDayRefresh = () => {
+      const now = new Date();
+      const nextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 2);
+      const delay = Math.max(nextDay.getTime() - now.getTime(), 1000);
+      timeoutId = setTimeout(async () => {
+        await refreshDailyAgenda();
+        if (!cancelled) scheduleNextLocalDayRefresh();
+      }, delay);
+    };
+
+    scheduleNextLocalDayRefresh();
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [staff?.clinic_id]);
 
   async function handleAppointmentStatusChange(id: string, status: AppointmentStatus): Promise<boolean> {
     const ok = await updateAppointmentStatus(id, status);
@@ -2101,6 +2245,38 @@ export function ClinicDesktop() {
   async function handleFreeResource(assignmentId: string) {
     const ok = await freeResource(assignmentId);
     if (ok && staff?.clinic_id) listActiveAssignments(staff.clinic_id).then(setAssignments);
+  }
+
+  async function handleMoveResource(assignment: ClinicResourceAssignment, resource: ClinicResource) {
+    if (!staff?.clinic_id || assignment.resource_type !== resource.resource_type) return;
+    const freed = await freeResource(assignment.id);
+    if (!freed) return;
+    const assigned = await manualAssignResource(
+      resource.id,
+      assignment.appointment_id,
+      assignment.clinic_id,
+      assignment.patient_id,
+      90,
+    );
+    if (assigned) {
+      await Promise.all([
+        listActiveAssignments(staff.clinic_id).then(setAssignments),
+        listTodayAppointments(staff.clinic_id).then(setTodayAppts),
+        listAllAppointments(staff.clinic_id).then(setAllAppts),
+      ]);
+    }
+  }
+
+  async function handleCompleteResource(assignment: ClinicResourceAssignment) {
+    if (!staff?.clinic_id) return;
+    const freed = await freeResource(assignment.id);
+    if (!freed) return;
+    await updateAppointmentStatus(assignment.appointment_id, 'completed');
+    await Promise.all([
+      listActiveAssignments(staff.clinic_id).then(setAssignments),
+      listTodayAppointments(staff.clinic_id).then(setTodayAppts),
+      listAllAppointments(staff.clinic_id).then(setAllAppts),
+    ]);
   }
 
   async function handlePreAuthStatusChange(id: string, status: PreAuthRequest['status']) {
@@ -2243,6 +2419,8 @@ export function ClinicDesktop() {
               brand={brand}
               tokens={tokens}
               goAppt={(id) => { setSelectedApptId(id); setScreen('agenda'); }}
+              goAgenda={goAgenda}
+              goPreauth={() => setScreen('preauth')}
               goInfra={() => setScreen('infraestructura')}
             />
           )}
@@ -2253,13 +2431,14 @@ export function ClinicDesktop() {
           )}
           {screen === 'agenda' && (
             <Agenda
-              appointments={allAppts}
+              appointments={todayAppts}
               assignments={assignments}
               brand={brand}
               tokens={tokens}
               onStatusChange={handleAppointmentStatusChange}
               onNewAppt={() => setShowNewAppt(true)}
               goPatient={goPatient}
+              initialStatusFilter={agendaStatusFilter}
             />
           )}
           {screen === 'preauth' && (
@@ -2278,7 +2457,8 @@ export function ClinicDesktop() {
               assignments={assignments}
               brand={brand}
               tokens={tokens}
-              onFree={handleFreeResource}
+              onMove={handleMoveResource}
+              onComplete={handleCompleteResource}
             />
           )}
           {screen === 'resultados' && (
@@ -2288,7 +2468,7 @@ export function ClinicDesktop() {
             <Aseguradoras appointments={allAppts} preauth={preauth} brand={brand} tokens={tokens} />
           )}
           {screen === 'rendimiento' && (
-            <Rendimiento clinicId={staff.clinic_id} brand={brand} tokens={tokens} />
+            <Rendimiento clinicId={staff.clinic_id} appointments={allAppts} brand={brand} tokens={tokens} goAgenda={goAgenda} goPreauth={() => setScreen('preauth')} />
           )}
         </div>
       </main>

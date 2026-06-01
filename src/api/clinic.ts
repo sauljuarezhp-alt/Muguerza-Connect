@@ -134,11 +134,11 @@ export async function updateAppointmentStatus(
   appointmentId: string,
   status: AppointmentStatus,
 ): Promise<boolean> {
-  const { error } = await supabase
-    .from('service_appointments')
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq('id', appointmentId);
-  return !error;
+  const { data, error } = await supabase.rpc('update_clinic_appointment_status', {
+    p_appointment_id: appointmentId,
+    p_status: status,
+  });
+  return !error && data === true;
 }
 
 // ── Capacity / Resources ──────────────────────────────────────────────────
@@ -279,20 +279,12 @@ export async function updatePreAuthStatus(
   status: PreAuthRequest['status'],
   folio?: string,
 ): Promise<boolean> {
-  const update: Record<string, unknown> = {
-    status,
-    updated_at: new Date().toISOString(),
-  };
-  if (status === 'approved' || status === 'rejected') {
-    update.resolved_at = new Date().toISOString();
-  }
-  if (folio) update.folio_aseguradora = folio;
-
-  const { error } = await supabase
-    .from('pre_auth_requests')
-    .update(update)
-    .eq('id', preAuthId);
-  return !error;
+  const { data, error } = await supabase.rpc('update_clinic_preauth_status', {
+    p_pre_auth_id: preAuthId,
+    p_status: status,
+    p_folio: folio ?? null,
+  });
+  return !error && data === true;
 }
 
 // ── Clinic Services ───────────────────────────────────────────────────────

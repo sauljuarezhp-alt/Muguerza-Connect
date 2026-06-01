@@ -909,3 +909,130 @@ Se agrego la seccion "Pacientes" al modulo Clinicas Ambulatorias. Toda la interf
 ### Proximo mini plan recomendado
 
 Modal de alta de nuevo paciente ambulatorio: formulario con datos del paciente, aseguradora y poliza, usando `INSERT` sobre `clinic_patients` con RLS de staff.
+
+---
+
+## Fusion Rendimiento financiero + operativo - 1 de junio de 2026
+
+**Estado:** Implementado en UI local.
+
+### Contexto
+
+La seccion `Rendimiento` ya consumia las vistas financieras correctas del modulo ambulatorio, pero al integrar finanzas se habia reemplazado parte del rendimiento operativo previo. Se fusionaron ambos enfoques para que la pantalla conserve lectura economica y operativa.
+
+### Archivo modificado
+
+| Archivo | Cambio |
+|---|---|
+| `src/components/ClinicDesktop.tsx` | `Rendimiento` recibe tambien `appointments={allAppts}`. Mantiene KPIs financieros desde vistas SQL y agrega KPIs operativos calculados desde agenda: citas totales, completadas, canceladas, no show, escalamientos, tasa de completacion y distribucion por tipo de servicio. |
+
+### Decisiones tecnicas
+
+- Las cifras economicas siguen viniendo de:
+  - `clinic_financial_metrics_monthly`
+  - `clinic_revenue_by_payment_method_monthly`
+  - `clinic_service_financials_monthly`
+- Los indicadores operativos se calculan en UI desde `allAppts`, porque representan estado de agenda visible y no requieren nueva vista SQL.
+- No se tocaron migraciones, RLS ni RPCs en este cambio.
+
+### Validacion realizada
+
+- `npx.cmd tsc -b` paso sin errores.
+
+---
+
+## Rollover diario de agenda + semilla demo - 1 de junio de 2026
+
+**Estado:** Implementado en UI local y datos demo insertados en Supabase vivo.
+
+### Contexto
+
+Para el video demo se necesitaba que el panel del dia no se quedara congelado si la app permanece abierta al cambio de fecha: las citas del dia anterior deben salir del panel diario y las nuevas citas del dia deben entrar automaticamente.
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/components/ClinicDesktop.tsx` | Agrega refresh automatico al siguiente inicio de dia local. Al cruzar medianoche refresca citas de hoy, agenda completa, pre-auth y asignaciones. Corrige los callbacks realtime para usar el `clinicId` activo en lugar del `staff` stale del primer render. |
+| `src/api/clinic.ts` | `updateAppointmentStatus` y `updatePreAuthStatus` vuelven a usar las RPCs endurecidas `update_clinic_appointment_status` y `update_clinic_preauth_status`. |
+| `src/types.ts` | Alinea `ClinicPaymentModel` con el contrato real de Supabase: `out_of_pocket | aseguradora`; `ClinicPaymentMethod` incluye `aseguradora` y `pendiente`. |
+
+### Supabase vivo
+
+- Se insertaron datos demo para el dia local actual en `CEI Saltillo Centro`.
+- Marcador de datos: `DEMO_VIDEO_TODAY_2026_06_01`.
+- Registros insertados:
+  - 10 `service_appointments`.
+  - 5 `pre_auth_requests`.
+  - 1 `clinic_resource_assignments` activo.
+- Mezcla demo:
+  - 2 completadas.
+  - 1 check-in.
+  - 1 en progreso.
+  - 4 programadas.
+  - 1 cancelada.
+  - 1 no-show.
+  - 5 por aseguradora.
+  - 5 out-of-pocket.
+
+### Validacion realizada
+
+- `npx.cmd tsc -b` paso sin errores.
+- Query directa en Supabase por fecha local `America/Mexico_City` confirmo 10 citas para el dia demo.
+- No se agregaron migraciones para la semilla demo; fue carga puntual para grabacion.
+
+---
+
+## Restauracion de microinteracciones UI ambulatorio - 1 de junio de 2026
+
+**Estado:** Implementado en UI local.
+
+### Contexto
+
+Durante la reintegracion de pacientes/finanzas se perdieron microinteracciones ya aceptadas para demo y operacion diaria. Se restauraron sin revertir pacientes, finanzas, rollover ni datos demo.
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/components/ClinicDesktop.tsx` | Restaura KPI cards navegables en Panel del dia y Rendimiento. Quita bolita de estado en lista de Bandeja. Restaura drag & drop en Infraestructura para mover pacientes entre recursos libres del mismo tipo. Agrega boton `Terminar` en recurso ocupado para liberar recurso y cerrar cita como `completed`. |
+
+### Comportamiento restaurado
+
+- `Citas hoy` abre Agenda sin filtro.
+- `En progreso` abre Agenda filtrada por `in_progress`.
+- `Check-in` abre Agenda filtrada por `checked_in`.
+- `Ocupacion` abre Infraestructura.
+- `Pre-auth pendiente` abre Pre-autorizacion.
+- KPIs operativos/financieros de Rendimiento abren Agenda filtrada o Pre-autorizacion segun corresponda.
+- Bandeja ya no muestra la bolita lateral de estado en cada conversacion.
+- Infraestructura:
+  - Recurso ocupado es draggable.
+  - Mientras se arrastra, solo recursos libres del mismo tipo aceptan drop.
+  - Drop ejecuta `freeResource` + `manualAssignResource`.
+  - La cita permanece `in_progress`.
+  - `Terminar` ejecuta `freeResource` + `updateAppointmentStatus('completed')`.
+
+### Validacion realizada
+
+- `npx.cmd tsc -b` paso sin errores.
+
+---
+
+## Correccion Agenda operativa del dia - 1 de junio de 2026
+
+**Estado:** Implementado en UI local.
+
+### Contexto
+
+La pantalla Agenda estaba recibiendo `allAppts`, por eso seguia mostrando citas historicas como las del 28 de mayo. Para el flujo operativo diario, Agenda debe mostrar solo las citas del dia local actual; el historico queda en Expediente de Pacientes y en Rendimiento.
+
+### Archivo modificado
+
+| Archivo | Cambio |
+|---|---|
+| `src/components/ClinicDesktop.tsx` | La pantalla `Agenda` ahora recibe `todayAppts` en lugar de `allAppts`. Los filtros y los links desde KPI cards operan sobre la agenda del dia. |
+
+### Validacion realizada
+
+- `npx.cmd tsc -b` paso sin errores.
