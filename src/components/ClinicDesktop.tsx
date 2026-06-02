@@ -250,14 +250,15 @@ function PanelHoy({
   const checkedIn = todayAppts.filter(a => a.status === 'checked_in').length;
   const pendingAuth = preauth.filter(p => p.status === 'pending' || p.status === 'in_review').length;
   const occupancy = resources.length > 0 ? Math.round((assignments.length / resources.length) * 100) : 0;
+  const [hoveredStat, setHoveredStat] = useState<number | null>(null);
 
   const stats = [
-    { label: 'Citas hoy', value: todayAppts.length, color: brand, onClick: () => goAgenda() },
-    { label: 'En progreso', value: inProgress, color: '#E08900', onClick: () => goAgenda('in_progress') },
-    { label: 'Check-in', value: checkedIn, color: '#2D6BE4', onClick: () => goAgenda('checked_in') },
-    { label: 'Ocupación', value: `${occupancy}%`, color: occupancy >= 80 ? '#D93A3A' : occupancy >= 50 ? '#E08900' : '#10897B', onClick: goInfra },
-    { label: 'Pre-auth pendiente', value: pendingAuth, color: '#D93A3A', onClick: goPreauth },
-    { label: 'Escalamientos activos', value: escalations.length, color: '#D93A3A', onClick: undefined },
+    { label: 'Citas hoy',             value: todayAppts.length,  color: brand,                                                                           onClick: () => goAgenda() },
+    { label: 'En progreso',           value: inProgress,         color: '#E08900',                                                                       onClick: () => goAgenda('in_progress') },
+    { label: 'Check-in',             value: checkedIn,          color: '#2D6BE4',                                                                       onClick: () => goAgenda('checked_in') },
+    { label: 'Ocupación',             value: `${occupancy}%`,    color: occupancy >= 80 ? '#D93A3A' : occupancy >= 50 ? '#E08900' : '#10897B',           onClick: goInfra },
+    { label: 'Pre-auth pendiente',    value: pendingAuth,        color: '#D93A3A',                                                                       onClick: goPreauth },
+    { label: 'Escalamientos activos', value: escalations.length, color: '#D93A3A',                                                                       onClick: undefined as (() => void) | undefined },
   ];
 
   const upcoming = todayAppts.filter(a => a.status === 'scheduled' || a.status === 'checked_in' || a.status === 'in_progress');
@@ -279,11 +280,19 @@ function PanelHoy({
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
-        {stats.map(s => (
+        {stats.map((s, i) => (
           <div
             key={s.label}
             onClick={s.onClick}
-            style={{ ...statCard(tokens, brand), cursor: s.onClick ? 'pointer' : 'default' }}
+            onMouseEnter={() => s.onClick && setHoveredStat(i)}
+            onMouseLeave={() => setHoveredStat(null)}
+            style={{
+              ...statCard(tokens, brand),
+              cursor: s.onClick ? 'pointer' : 'default',
+              border: `1px solid ${hoveredStat === i ? s.color + '55' : tokens.border}`,
+              background: hoveredStat === i ? s.color + '08' : tokens.surface,
+              transition: 'border 0.15s, background 0.15s',
+            }}
           >
             <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 600, fontSize: 28, color: s.color, lineHeight: 1 }}>{s.value}</div>
             <div style={{ fontSize: 11.5, color: tokens.textSecondary, lineHeight: 1.3 }}>{s.label}</div>
