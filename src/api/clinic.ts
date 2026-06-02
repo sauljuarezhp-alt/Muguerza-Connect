@@ -184,32 +184,19 @@ export async function manualAssignResource(
   patientId: string,
   expectedEndMinutes = 60,
 ): Promise<boolean> {
-  // Free any existing active assignment on the same resource first
-  await supabase
-    .from('clinic_resource_assignments')
-    .update({ status: 'freed', ended_at: new Date().toISOString() })
-    .eq('resource_id', resourceId)
-    .eq('status', 'active');
-
-  const { error } = await supabase
-    .from('clinic_resource_assignments')
-    .insert({
-      resource_id: resourceId,
-      appointment_id: appointmentId,
-      clinic_id: clinicId,
-      patient_id: patientId,
-      expected_end_at: new Date(Date.now() + expectedEndMinutes * 60 * 1000).toISOString(),
-      manual: true,
-    });
-  return !error;
+  const { data, error } = await supabase.rpc('assign_clinic_resource', {
+    p_resource_id: resourceId,
+    p_appointment_id: appointmentId,
+    p_expected_end_minutes: expectedEndMinutes,
+  });
+  return !error && data === true;
 }
 
 export async function freeResource(assignmentId: string): Promise<boolean> {
-  const { error } = await supabase
-    .from('clinic_resource_assignments')
-    .update({ status: 'freed', ended_at: new Date().toISOString() })
-    .eq('id', assignmentId);
-  return !error;
+  const { data, error } = await supabase.rpc('free_clinic_resource_assignment', {
+    p_assignment_id: assignmentId,
+  });
+  return !error && data === true;
 }
 
 // ── Conversations / CRM ──────────────────────────────────────────────────

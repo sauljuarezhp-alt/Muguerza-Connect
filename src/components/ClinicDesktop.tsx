@@ -3,6 +3,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../context/ThemeContext';
 import { Ico } from '../data/icons';
+import { BRAND_PRESETS } from './ProfilePanel';
 import {
   getCurrentClinicStaff,
   listTodayAppointments,
@@ -160,6 +161,22 @@ function fmt$(n: number) {
   if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
   if (Math.abs(n) >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n);
+}
+
+function paymentModelLabel(model: ClinicRevenueByPaymentMethod['payment_model']) {
+  return model === 'out_of_pocket' ? 'Out-of-pocket' : 'Aseguradora';
+}
+
+function paymentMethodLabel(method: ClinicRevenueByPaymentMethod['payment_method']) {
+  const labels: Record<NonNullable<ClinicRevenueByPaymentMethod['payment_method']>, string> = {
+    efectivo: 'Efectivo',
+    tarjeta: 'Tarjeta',
+    transferencia: 'Transferencia',
+    aseguradora: 'Aseguradora',
+    cortesia: 'Cortesia',
+    pendiente: 'Pendiente',
+  };
+  return method ? labels[method] : '-';
 }
 
 // ── Shared card style helper ────────────────────────────────────────────────
@@ -965,6 +982,41 @@ function Rendimiento({
     return { month: label, cobrado: m.collected_amount, margen: m.estimated_margin };
   });
 
+  const revenueByModelMethodMap = revenueByMethod.reduce((acc, row) => {
+    const key = `${row.payment_model}:${row.payment_method ?? 'sin_metodo'}`;
+    const current = acc.get(key) ?? {
+      payment_model: row.payment_model,
+      payment_method: row.payment_method,
+      services: 0,
+      collected_amount: 0,
+      booked_amount: 0,
+      statuses: new Map<ClinicPaymentStatus, number>(),
+    };
+
+    current.services += row.services;
+    current.collected_amount += row.collected_amount;
+    current.booked_amount += row.booked_amount;
+    current.statuses.set(row.payment_status, (current.statuses.get(row.payment_status) ?? 0) + row.services);
+    acc.set(key, current);
+    return acc;
+  }, new Map<string, {
+    payment_model: ClinicRevenueByPaymentMethod['payment_model'];
+    payment_method: ClinicRevenueByPaymentMethod['payment_method'];
+    services: number;
+    collected_amount: number;
+    booked_amount: number;
+    statuses: Map<ClinicPaymentStatus, number>;
+  }>());
+
+  const revenueByModelMethod = Array.from(revenueByModelMethodMap.values())
+    .map(row => ({
+      ...row,
+      statuses: Array.from(row.statuses.entries())
+        .map(([status, services]) => ({ status, services }))
+        .sort((a, b) => b.services - a.services),
+    }))
+    .sort((a, b) => b.collected_amount - a.collected_amount || b.booked_amount - a.booked_amount || b.services - a.services);
+
   const noFinancialData = serviceFinancials.length === 0 && revenueByMethod.length === 0 && metrics.length === 0;
 
   return (
@@ -1046,27 +1098,36 @@ function Rendimiento({
           </div>
 
           {/* Desglose por modelo/método */}
-          {revenueByMethod.length > 0 && (
+          {revenueByModelMethod.length > 0 && (
             <div style={card(tokens)}>
               <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 13.5, color: tokens.text, marginBottom: 14 }}>Desglose por modelo y método de pago</div>
               <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${tokens.border}` }}>
-                    {['Modelo', 'Método', 'Servicios', 'Cobrado', 'Cotizado'].map(h => (
+                    {['Modelo', 'Metodo', 'Servicios', 'Cobrado', 'Cotizado', 'Estados'].map(h => (
                       <th key={h} style={{ textAlign: 'left', padding: '7px 10px', fontSize: 11.5, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, color: tokens.textSecondary }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {revenueByMethod.map((r, i) => (
-                    <tr key={i} style={{ borderBottom: i < revenueByMethod.length - 1 ? `1px solid ${tokens.borderLight}` : 'none' }}>
+                  {revenueByModelMethod.map((r, i) => (
+                    <tr key={`${r.payment_model}-${r.payment_method ?? 'sin-metodo'}`} style={{ borderBottom: i < revenueByModelMethod.length - 1 ? `1px solid ${tokens.borderLight}` : 'none' }}>
                       <td style={{ padding: '9px 10px', color: tokens.text, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500 }}>
-                        {r.payment_model === 'out_of_pocket' ? 'Out-of-pocket' : 'Aseguradora'}
+                        {paymentModelLabel(r.payment_model)}
                       </td>
-                      <td style={{ padding: '9px 10px', color: tokens.textSecondary }}>{r.payment_method ?? '—'}</td>
+                      <td style={{ padding: '9px 10px', color: tokens.textSecondary }}>{paymentMethodLabel(r.payment_method)}</td>
                       <td style={{ padding: '9px 10px', color: tokens.text }}>{r.services}</td>
                       <td style={{ padding: '9px 10px', color: tokens.text, fontFamily: 'Roboto Mono, monospace' }}>{fmt$(r.collected_amount)}</td>
                       <td style={{ padding: '9px 10px', color: tokens.textSecondary, fontFamily: 'Roboto Mono, monospace' }}>{fmt$(r.booked_amount)}</td>
+                      <td style={{ padding: '9px 10px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {r.statuses.map(s => (
+                            <span key={s.status} style={badge(PAYMENT_STATUS_COLOR[s.status] ?? '#8E8E93')}>
+                              {PAYMENT_STATUS_LABEL[s.status] ?? s.status} - {s.services}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1455,11 +1516,13 @@ function Infraestructura({
   onComplete: (assignment: ClinicResourceAssignment) => void;
 }) {
   const [dragging, setDragging] = useState<ClinicResourceAssignment | null>(null);
+  const [movingAssignment, setMovingAssignment] = useState<ClinicResourceAssignment | null>(null);
   const byType: Record<ClinicResourceType, ClinicResource[]> = {
     infusion_chair: [], lab_station: [], imaging_room: [], surgery_room: [], consult_room: [],
   };
   for (const r of resources) byType[r.resource_type].push(r);
   const assignmentByResource = new Map(assignments.map(a => [a.resource_id, a]));
+  const activeMove = dragging ?? movingAssignment;
 
   const types: ClinicResourceType[] = ['infusion_chair', 'lab_station', 'imaging_room', 'surgery_room', 'consult_room'];
 
@@ -1497,7 +1560,7 @@ function Infraestructura({
       {types.map(type => {
         const list = byType[type];
         if (list.length === 0) return null;
-        const canDropInType = dragging?.resource_type === type;
+        const canDropInType = activeMove?.resource_type === type;
         return (
           <div key={type} style={card(tokens)}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
@@ -1510,8 +1573,14 @@ function Infraestructura({
               </span>
             </div>
             {canDropInType && (
-              <div style={{ marginBottom: 12, padding: '8px 10px', borderRadius: 8, background: '#10897B12', border: '1px solid #10897B40', color: '#10897B', fontSize: 12, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500 }}>
-                Arrastra al paciente a un recurso libre de {RESOURCE_TYPE_LABEL[type].toLowerCase()}.
+              <div style={{ marginBottom: 12, padding: '8px 10px', borderRadius: 8, background: '#10897B12', border: '1px solid #10897B40', color: '#10897B', fontSize: 12, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <span>Mueve al paciente a un recurso libre de {RESOURCE_TYPE_LABEL[type].toLowerCase()}.</span>
+                {movingAssignment && (
+                  <button onClick={() => setMovingAssignment(null)}
+                    style={{ border: '1px solid #10897B40', background: tokens.surface, color: '#10897B', borderRadius: 6, padding: '3px 8px', fontSize: 10.5, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, cursor: 'pointer' }}>
+                    Cancelar
+                  </button>
+                )}
               </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10 }}>
@@ -1520,25 +1589,32 @@ function Infraestructura({
                 const occupied = !!a;
                 const remaining = occupied ? minutesUntil(a.expected_end_at) : null;
                 const overdue = remaining !== null && remaining < 0;
-                const canDrop = !!dragging && !occupied && dragging.resource_type === r.resource_type;
-                const bg = canDrop ? '#10897B12' : occupied ? (overdue ? 'rgba(217,58,58,0.08)' : brand + '0F') : tokens.surfaceAlt;
-                const borderColor = canDrop ? '#10897B' : occupied ? (overdue ? '#D93A3A' : brand) : tokens.border;
+                const canMoveHere = !!activeMove && !occupied && activeMove.resource_type === r.resource_type;
+                const bg = canMoveHere ? '#10897B12' : occupied ? (overdue ? 'rgba(217,58,58,0.08)' : brand + '0F') : tokens.surfaceAlt;
+                const borderColor = canMoveHere ? '#10897B' : occupied ? (overdue ? '#D93A3A' : brand) : tokens.border;
 
                 return (
                   <div key={r.id}
                     onDragOver={e => {
-                      if (canDrop) e.preventDefault();
+                      if (canMoveHere) {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                      }
+                    }}
+                    onDragEnter={e => {
+                      if (canMoveHere) e.preventDefault();
                     }}
                     onDrop={e => {
                       e.preventDefault();
-                      if (dragging && canDrop) onMove(dragging, r);
+                      if (activeMove && canMoveHere) onMove(activeMove, r);
                       setDragging(null);
+                      setMovingAssignment(null);
                     }}
                     style={{ background: bg, border: `1px solid ${borderColor}`, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 110, transition: 'border-color 0.12s, background 0.12s' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 13, color: tokens.text }}>{r.name}</div>
                       <span style={{ ...badge(occupied ? (overdue ? '#D93A3A' : brand) : '#10897B'), fontSize: 10 }}>
-                        {canDrop ? 'Soltar aquí' : occupied ? (overdue ? 'Sobretiempo' : 'Ocupada') : 'Libre'}
+                        {canMoveHere ? 'Mover aquí' : occupied ? (overdue ? 'Sobretiempo' : 'Ocupada') : 'Libre'}
                       </span>
                     </div>
                     {occupied ? (
@@ -1546,7 +1622,9 @@ function Infraestructura({
                         draggable
                         onDragStart={e => {
                           setDragging(a);
+                          setMovingAssignment(null);
                           e.dataTransfer.effectAllowed = 'move';
+                          e.dataTransfer.setData('text/plain', a.id);
                         }}
                         onDragEnd={() => setDragging(null)}
                         style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, opacity: dragging?.id === a.id ? 0.5 : 1, cursor: 'grab' }}
@@ -1565,6 +1643,10 @@ function Infraestructura({
                             {overdue ? 'Excede ' : 'Termina en '}{fmtRemaining(remaining)}
                           </div>
                           <div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={e => { e.stopPropagation(); setMovingAssignment(movingAssignment?.id === a.id ? null : a); }}
+                              style={{ padding: '3px 9px', borderRadius: 6, border: `1px solid ${movingAssignment?.id === a.id ? brand : tokens.border}`, background: movingAssignment?.id === a.id ? brand : tokens.surface, color: movingAssignment?.id === a.id ? '#fff' : brand, fontSize: 10.5, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, cursor: 'pointer' }}>
+                              Mover
+                            </button>
                             <button onClick={() => onComplete(a)}
                               style={{ padding: '3px 9px', borderRadius: 6, border: '1px solid #10897B', background: '#10897B', color: '#fff', fontSize: 10.5, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, cursor: 'pointer' }}>
                               Terminar
@@ -1573,8 +1655,13 @@ function Infraestructura({
                         </div>
                       </div>
                     ) : (
-                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: canDrop ? '#10897B' : tokens.textTertiary, fontSize: 12, fontFamily: canDrop ? 'Franklin Gothic, Libre Franklin, sans-serif' : undefined, fontWeight: canDrop ? 500 : undefined }}>
-                        {canDrop ? '↓ Mover aquí' : 'Disponible'}
+                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: canMoveHere ? '#10897B' : tokens.textTertiary, fontSize: 12, fontFamily: canMoveHere ? 'Franklin Gothic, Libre Franklin, sans-serif' : undefined, fontWeight: canMoveHere ? 500 : undefined }}>
+                        {canMoveHere ? (
+                          <button onClick={() => { if (activeMove) onMove(activeMove, r); setMovingAssignment(null); }}
+                            style={{ border: '1px solid #10897B', background: '#10897B', color: '#fff', borderRadius: 6, padding: '5px 10px', fontSize: 11.5, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, cursor: 'pointer' }}>
+                            Mover aquí
+                          </button>
+                        ) : 'Disponible'}
                       </div>
                     )}
                   </div>
@@ -2084,14 +2171,200 @@ function ClinicPatientDetail({
   );
 }
 
+// ── Clinic Profile Modal ─────────────────────────────────────────────────────
+
+type ClinicProfileTab = 'perfil' | 'apariencia' | 'seguridad' | 'cuenta';
+
+function Toggle({ checked, onChange, brand }: { checked: boolean; onChange: (v: boolean) => void; brand: string }) {
+  return (
+    <div onClick={() => onChange(!checked)} style={{ width: 40, height: 22, borderRadius: 99, background: checked ? brand : '#D1D1D6', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+      <div style={{ position: 'absolute', top: 2, left: checked ? 20 : 2, width: 18, height: 18, borderRadius: 99, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s' }} />
+    </div>
+  );
+}
+
+function ClinicProfileModal({ staff, brand, brandColor, onClose, onBrandChange }: {
+  staff: ClinicStaff;
+  brand: string;
+  brandColor: string;
+  onClose: () => void;
+  onBrandChange: (color: string) => void;
+}) {
+  const { tokens, isDark, toggleDark } = useTheme();
+  const [tab, setTab] = useState<ClinicProfileTab>('perfil');
+  const [email, setEmail] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwMsg, setPwMsg] = useState('');
+  const [pwSuccess, setPwSuccess] = useState(false);
+  const [pwLoading, setPwLoading] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ''));
+  }, []);
+
+  async function handlePwSubmit() {
+    setPwMsg('');
+    if (pwNew.length < 6) { setPwMsg('Mínimo 6 caracteres.'); return; }
+    if (pwNew !== pwConfirm) { setPwMsg('Las contraseñas no coinciden.'); return; }
+    setPwLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: pwNew });
+    setPwLoading(false);
+    if (error) { setPwMsg('Error: ' + error.message); }
+    else { setPwSuccess(true); setPwMsg('¡Contraseña actualizada!'); setPwNew(''); setPwConfirm(''); }
+  }
+
+  const TABS: { id: ClinicProfileTab; label: string; ico: React.ReactNode }[] = [
+    { id: 'perfil',     label: 'Mi perfil',  ico: Ico.user },
+    { id: 'apariencia', label: 'Apariencia', ico: Ico.image },
+    { id: 'seguridad',  label: 'Seguridad',  ico: Ico.shield },
+    { id: 'cuenta',     label: 'Cuenta',     ico: Ico.file },
+  ];
+
+  const inputSt: React.CSSProperties = {
+    border: `1px solid ${tokens.border}`, borderRadius: 8, padding: '8px 12px',
+    fontSize: 13, fontFamily: 'inherit', width: '100%', outline: 'none',
+    boxSizing: 'border-box', background: tokens.surfaceAlt, color: tokens.text,
+  };
+
+  function ST({ c }: { c: string }) {
+    return <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 13.5, color: tokens.text, marginBottom: 10, marginTop: 20 }}>{c}</div>;
+  }
+  function PR({ label, value }: { label: string; value: string }) {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 8, alignItems: 'start', padding: '8px 0', borderBottom: `1px solid ${tokens.borderLight}` }}>
+        <span style={{ fontSize: 12, color: tokens.textSecondary, paddingTop: 1 }}>{label}</span>
+        <span style={{ fontSize: 13, color: tokens.text, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500 }}>{value}</span>
+      </div>
+    );
+  }
+
+  const initials = staff.name.split(' ').map((w: string) => w[0]).slice(0, 2).join('');
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, backdropFilter: 'blur(4px)' }} />
+      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 600, maxHeight: '88vh', background: tokens.surface, borderRadius: 16, boxShadow: '0 24px 80px rgba(0,0,0,0.5)', zIndex: 1001, display: 'flex', flexDirection: 'column', overflow: 'hidden', border: `1px solid ${tokens.border}` }}>
+        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${tokens.borderLight}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 16, color: tokens.text }}>Perfil y ajustes</div>
+          <div onClick={onClose} style={{ width: 28, height: 28, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: tokens.surfaceAlt, color: tokens.textTertiary }}>{Ico.x}</div>
+        </div>
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          <div style={{ width: 140, borderRight: `1px solid ${tokens.borderLight}`, padding: '10px 8px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {TABS.map(t => (
+              <div key={t.id} onClick={() => setTab(t.id)}
+                style={{ padding: '8px 10px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, background: tab === t.id ? brand + '15' : 'transparent', color: tab === t.id ? brand : tokens.textTertiary, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontSize: 13, fontWeight: 500, transition: 'background 0.12s, color 0.12s' }}>
+                <span style={{ display: 'inline-flex', width: 15, height: 15, flexShrink: 0 }}>{t.ico}</span>{t.label}
+              </div>
+            ))}
+          </div>
+          <div style={{ flex: 1, overflow: 'auto', padding: '6px 22px 22px' }}>
+
+            {tab === 'perfil' && (<>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 20, borderBottom: `1px solid ${tokens.borderLight}` }}>
+                <div style={{ width: 72, height: 72, borderRadius: 999, background: `linear-gradient(135deg,${brand} 0%,#274B96 100%)`, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 26, marginBottom: 12 }}>{initials}</div>
+                <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 18, lineHeight: 1.2, color: tokens.text }}>{staff.name}</div>
+                <div style={{ display: 'inline-block', marginTop: 6, background: brand + '18', color: brand, fontSize: 11.5, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, padding: '3px 10px', borderRadius: 99, textTransform: 'capitalize' }}>{staff.role}</div>
+              </div>
+              <ST c="Datos del staff" />
+              <PR label="Nombre" value={staff.name} />
+              <PR label="Correo" value={email || '—'} />
+              <PR label="Rol" value={staff.role} />
+              <PR label="Clínica" value={staff.clinic.name} />
+              <PR label="Ubicación" value={staff.clinic.location || '—'} />
+              <PR label="Tipo" value={staff.clinic.type === 'organic' ? 'Orgánica (hub)' : 'Spoke'} />
+            </>)}
+
+            {tab === 'apariencia' && (<>
+              <ST c="Color de acento" />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 6 }}>
+                {BRAND_PRESETS.map(p => {
+                  const sw = isDark ? p.dark : p.color;
+                  return (
+                    <div key={p.color} onClick={() => onBrandChange(p.color)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 99, background: sw, boxShadow: brandColor === p.color ? `0 0 0 2px ${tokens.surface},0 0 0 4px ${sw}` : '0 1px 3px rgba(0,0,0,0.2)', transition: 'box-shadow 0.15s' }} />
+                      <span style={{ fontSize: 10.5, color: tokens.textTertiary }}>{p.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <ST c="Modo oscuro" />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: tokens.surfaceAlt, borderRadius: 10 }}>
+                <div>
+                  <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 13, color: tokens.text }}>Modo oscuro</div>
+                  <div style={{ fontSize: 11.5, color: tokens.textSecondary, marginTop: 2 }}>{isDark ? 'Activo — paleta oscura' : 'Inactivo — tema claro'}</div>
+                </div>
+                <Toggle checked={isDark} onChange={v => toggleDark(v)} brand={brand} />
+              </div>
+            </>)}
+
+            {tab === 'seguridad' && (<>
+              <ST c="Cambiar contraseña" />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div><div style={{ fontSize: 12, color: tokens.textSecondary, marginBottom: 5 }}>Nueva contraseña</div><input type="password" value={pwNew} onChange={e => setPwNew(e.target.value)} placeholder="Mínimo 6 caracteres" style={inputSt} /></div>
+                <div><div style={{ fontSize: 12, color: tokens.textSecondary, marginBottom: 5 }}>Confirmar contraseña</div><input type="password" value={pwConfirm} onChange={e => setPwConfirm(e.target.value)} placeholder="Repite la contraseña" style={inputSt} onKeyDown={e => e.key === 'Enter' && handlePwSubmit()} /></div>
+                {pwMsg && <div style={{ padding: '8px 12px', borderRadius: 8, background: pwSuccess ? '#E4F3F1' : '#FDECEC', color: pwSuccess ? '#10897B' : '#D93A3A', fontSize: 12.5 }}>{pwMsg}</div>}
+                <button onClick={handlePwSubmit} disabled={pwLoading}
+                  style={{ background: pwLoading ? '#ccc' : brand, color: '#fff', border: 0, padding: '9px 0', borderRadius: 8, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 13.5, cursor: pwLoading ? 'not-allowed' : 'pointer', marginTop: 4 }}>
+                  {pwLoading ? 'Actualizando…' : 'Actualizar contraseña'}
+                </button>
+              </div>
+            </>)}
+
+            {tab === 'cuenta' && (<>
+              <ST c="Cuenta" />
+              {([['Titular', staff.name], ['Rol', staff.role], ['Clínica', staff.clinic.name]] as [string,string][]).map(([l, v]) => <PR key={l} label={l} value={v} />)}
+              <ST c="Servicios conectados" />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {[
+                  { name: 'Base de datos', detail: 'Supabase PostgreSQL', active: true },
+                  { name: 'Almacenamiento', detail: 'Supabase Storage', active: true },
+                  { name: 'WhatsApp Business API', detail: 'Canal de pacientes', active: false },
+                  { name: 'Bot Concierge', detail: 'Agendamiento automático', active: false },
+                ].map(s => (
+                  <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: tokens.surfaceAlt, borderRadius: 10 }}>
+                    <div><div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 13, color: tokens.text }}>{s.name}</div><div style={{ fontSize: 11.5, color: tokens.textSecondary, marginTop: 2 }}>{s.detail}</div></div>
+                    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 99, background: s.active ? '#E4F3F1' : tokens.surfaceAlt, color: s.active ? '#10897B' : tokens.textSecondary, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, border: s.active ? 'none' : `1px solid ${tokens.border}` }}>{s.active ? 'Activo' : 'Pendiente'}</span>
+                  </div>
+                ))}
+              </div>
+              <ST c="Información" />
+              <PR label="Versión" value="1.0.0-beta" />
+              <PR label="Entorno" value="Producción" />
+              <button onClick={() => supabase.auth.signOut()}
+                style={{ marginTop: 24, width: '100%', background: 'transparent', color: '#D93A3A', border: '1px solid #D93A3A', padding: '8px 0', borderRadius: 8, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 13, cursor: 'pointer' }}>
+                Cerrar sesión
+              </button>
+            </>)}
+
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Shell principal ──────────────────────────────────────────────────────────
 
 type ClinicScreen = 'panel' | 'agenda' | 'preauth' | 'bandeja' | 'infraestructura' | 'resultados' | 'aseguradoras' | 'rendimiento' | 'pacientes';
 
 export function ClinicDesktop() {
   const { tokens, isDark } = useTheme();
-  const brand = brandFor(isDark);
 
+  const [prefs, setPrefs] = useState<{ brandColor: string }>(() => {
+    try { const s = localStorage.getItem('clinic_prefs'); return s ? JSON.parse(s) : { brandColor: '#671E75' }; }
+    catch { return { brandColor: '#671E75' }; }
+  });
+  const baseColor = prefs.brandColor || '#671E75';
+  const brand = isDark ? (BRAND_PRESETS.find(p => p.color === baseColor)?.dark ?? baseColor) : baseColor;
+
+  function handleBrandChange(color: string) {
+    const next = { ...prefs, brandColor: color };
+    setPrefs(next);
+    localStorage.setItem('clinic_prefs', JSON.stringify(next));
+  }
+
+  const [showProfile, setShowProfile] = useState(false);
   const [screen, setScreen] = useState<ClinicScreen>('panel');
   const [hoveredNav, setHoveredNav] = useState<string | null>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
@@ -2369,7 +2642,10 @@ export function ClinicDesktop() {
           );
         })}
 
-        <div style={{ marginTop: 'auto', padding: '12px 16px', borderTop: `1px solid ${tokens.borderLight}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div onClick={() => setShowProfile(true)}
+          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = brand + '0D'}
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+          style={{ marginTop: 'auto', padding: '12px 16px', borderTop: `1px solid ${tokens.borderLight}`, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}>
           <div style={{ width: 30, height: 30, borderRadius: 999, background: `linear-gradient(135deg,${brand} 0%, #274B96 100%)`, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 12 }}>
             {staff.name.split(' ').map(w => w[0]).slice(0, 2).join('')}
           </div>
@@ -2377,7 +2653,7 @@ export function ClinicDesktop() {
             <div style={{ fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', fontWeight: 500, fontSize: 12.5, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: tokens.text }}>{staff.name}</div>
             <div style={{ fontSize: 10.5, color: tokens.textSecondary, marginTop: 2, textTransform: 'capitalize' }}>{staff.role}</div>
           </div>
-          <button onClick={() => supabase.auth.signOut()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: tokens.textSecondary, fontSize: 11, fontFamily: 'Franklin Gothic, Libre Franklin, sans-serif', padding: 0 }}>Salir</button>
+          <span style={{ display: 'inline-flex', width: 14, height: 14, color: tokens.textTertiary, flexShrink: 0 }}>{Ico.settings}</span>
         </div>
       </aside>
 
@@ -2481,6 +2757,16 @@ export function ClinicDesktop() {
           tokens={tokens}
           onClose={() => setShowNewAppt(false)}
           onCreated={async () => { setShowNewAppt(false); await handleNewAppointmentCreated(); }}
+        />
+      )}
+
+      {showProfile && staff && (
+        <ClinicProfileModal
+          staff={staff}
+          brand={brand}
+          brandColor={baseColor}
+          onClose={() => setShowProfile(false)}
+          onBrandChange={handleBrandChange}
         />
       )}
     </div>
